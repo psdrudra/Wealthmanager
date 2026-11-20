@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>WealthLedger — Personal Asset, Liability, Income & Expenditure Tracker</title>
-  <meta name="description" content="Personal Asset, Liability, Bank, Income & Expenditure Tracker with localStorage persistence and interactive Chart.js analytics." />
+  <meta name="description" content="Personal Asset, Liability, Bank, Income & Expenditure Tracker with real-time cloud sync and interactive Chart.js analytics." />
   <meta property="og:title" content="WealthLedger — Personal Finance & Net Worth Tracker" />
   <meta property="og:description" content="Track Assets, Bank Holdings, Liabilities, Income, Expenditure, and Year-End Analytics locally in your browser." />
   <meta property="og:type" content="website" />
@@ -16,6 +16,8 @@
 
   <!-- Tailwind CSS via CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase Cloud Auth & Firestore Sync Bridge -->
+  <script type="module" src="/src/cloudLedger.ts"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -223,7 +225,7 @@
 <body class="min-h-screen text-slate-900 selection:bg-indigo-100 selection:text-indigo-900">
 
   <!-- ===================================================================== -->
-  <!-- AUTHENTICATION GATE (CREATE USER ID & PASSWORD / SIGN IN)              -->
+  <!-- CLOUD AUTHENTICATION GATE (GOOGLE / EMAIL & PASSWORD)                  -->
   <!-- ===================================================================== -->
   <section id="auth-gate" class="min-h-screen flex items-center justify-center p-4 sm:p-6">
     <div class="w-full max-w-md space-y-5">
@@ -232,43 +234,61 @@
         <div class="relative z-10 flex items-center gap-3.5">
           <div class="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-xs border border-white/25 flex items-center justify-center shrink-0">
             <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2zm10-10V7a4 4 0 0 0-8 0v4h8z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 0 0 4 4h9a5 5 0 1 0-.1-9.999 5.002 5.002 0 1 0-9.78 2.096A4.001 4.001 0 0 0 3 15z" />
             </svg>
           </div>
           <div class="min-w-0">
             <h1 class="text-xl font-extrabold tracking-tight leading-tight">WealthLedger</h1>
-            <p class="text-xs text-white/85 mt-0.5">Personal Asset, Liability, Income &amp; Expense Suite</p>
+            <p class="text-xs text-white/85 mt-0.5">Cloud-Synced Personal Finance Suite</p>
           </div>
         </div>
       </div>
 
       <!-- Auth Card -->
       <div class="fintech-card p-6 sm:p-7 space-y-5">
+        <!-- Quick Google Sign-In (Works instantly across every device & browser) -->
+        <div id="auth-google-wrap" class="space-y-3">
+          <button type="button" id="google-signin-btn" onclick="handleGoogleSignIn()" class="w-full min-h-[46px] px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 rounded-xl flex items-center justify-center gap-3 text-sm font-bold text-slate-800 shadow-2xs transition-all">
+            <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+              <path fill="#34A853" d="M12 24c3.3 0 6.08-1.09 8.11-2.96l-3.88-3.05c-1.1.74-2.51 1.18-4.23 1.18-3.25 0-6.01-2.19-7-5.15H1.01v3.14C3.05 21.22 7.21 24 12 24z"/>
+              <path fill="#FBBC05" d="M5 14.02c-.25-.74-.39-1.54-.39-2.36 0-.82.14-1.62.39-2.36V6.16H1.01C.37 7.45 0 8.9 0 10.42s.37 2.97 1.01 4.26l3.99-3.14z" transform="translate(0 1.24)"/>
+              <path fill="#EA4335" d="M12 4.83c1.8 0 3.41.62 4.68 1.84l3.51-3.51C18.07 1.19 15.29 0 12 0 7.21 0 3.05 2.78 1.01 6.84l3.99 3.14c.99-2.96 3.75-5.15 7-5.15z"/>
+            </svg>
+            <span>Continue with Google</span>
+          </button>
+          <div class="flex items-center gap-3">
+            <div class="h-px flex-1 bg-slate-200"></div>
+            <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">or with Email &amp; Password</span>
+            <div class="h-px flex-1 bg-slate-200"></div>
+          </div>
+        </div>
+
         <!-- Mode Switcher Tabs -->
-        <div class="grid grid-cols-2 p-1 bg-slate-100 rounded-2xl gap-1">
+        <div id="auth-mode-tabs" class="grid grid-cols-2 p-1 bg-slate-100 rounded-2xl gap-1">
           <button type="button" id="auth-tab-signin" onclick="switchAuthTab('signin')" class="py-2.5 px-3 text-xs sm:text-sm font-bold rounded-xl transition-all">
             Sign In
           </button>
           <button type="button" id="auth-tab-register" onclick="switchAuthTab('register')" class="py-2.5 px-3 text-xs sm:text-sm font-bold rounded-xl transition-all">
-            Create User ID
+            Create Account
           </button>
         </div>
 
-        <!-- Inline Error Alert -->
-        <div id="auth-error" class="hidden px-4 py-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700"></div>
+        <!-- Inline Error & Info Alerts -->
+        <div id="auth-error" class="hidden px-4 py-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700 leading-relaxed"></div>
+        <div id="auth-info" class="hidden px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 leading-relaxed"></div>
 
         <!-- SIGN IN FORM -->
         <form id="auth-signin-form" onsubmit="handleSignInSubmit(event)" class="space-y-4">
-          <div id="signin-account-hint" class="hidden px-3.5 py-2.5 rounded-xl text-xs font-medium"></div>
           <div>
-            <label for="login-userid" class="block text-xs font-semibold text-slate-600 mb-1.5">User ID</label>
-            <input id="login-userid" type="text" required autocomplete="username" placeholder="Enter your User ID" class="w-full px-3.5 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[44px]" />
+            <label for="login-email" class="block text-xs font-semibold text-slate-600 mb-1.5">Email (Login ID)</label>
+            <input id="login-email" type="email" required autocomplete="email" placeholder="you@example.com" class="w-full px-3.5 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[44px]" />
           </div>
           <div>
             <div class="flex items-center justify-between gap-2 mb-1.5">
               <label for="login-password" class="block text-xs font-semibold text-slate-600">Password</label>
               <button type="button" onclick="switchAuthTab('forgot')" class="text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline">
-                Forgot ID &amp; Password?
+                Forgot Password?
               </button>
             </div>
             <div class="relative">
@@ -281,25 +301,25 @@
           <button type="submit" class="w-full min-h-[46px] px-5 py-2.5 text-sm font-bold text-white nav-active-gradient rounded-xl hover:opacity-95 transition-opacity">
             Sign In to App
           </button>
-          <p id="signin-helper-note" class="text-xs text-center text-slate-500">
-            New user? <button type="button" onclick="switchAuthTab('register')" class="font-semibold text-indigo-600 hover:underline">Create User ID &amp; Password</button>
+          <p class="text-xs text-center text-slate-500">
+            New user? <button type="button" onclick="switchAuthTab('register')" class="font-semibold text-indigo-600 hover:underline">Create Account</button>
           </p>
         </form>
 
-        <!-- CREATE USER ID & PASSWORD FORM -->
+        <!-- CREATE CLOUD ACCOUNT FORM -->
         <form id="auth-register-form" onsubmit="handleCreateUserSubmit(event)" class="hidden space-y-4">
-          <div id="reg-legacy-notice" class="hidden px-3.5 py-2.5 rounded-xl bg-sky-50 border border-sky-200 text-xs font-medium text-sky-800">
-            Your existing saved records will be safely preserved under this User ID.
+          <div>
+            <label for="reg-name" class="block text-xs font-semibold text-slate-600 mb-1.5">Full Name *</label>
+            <input id="reg-name" type="text" required minlength="2" maxlength="80" autocomplete="name" placeholder="e.g. Rudra" class="w-full px-3.5 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[44px]" />
           </div>
           <div>
-            <label for="reg-userid" class="block text-xs font-semibold text-slate-600 mb-1.5">Create User ID *</label>
-            <input id="reg-userid" type="text" required minlength="3" maxlength="32" autocomplete="username" placeholder="e.g. rudra2026" class="w-full px-3.5 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[44px]" />
-            <p class="text-[11px] text-slate-400 mt-1">Minimum 3 characters (letters, numbers, dot, underscore or hyphen)</p>
+            <label for="reg-email" class="block text-xs font-semibold text-slate-600 mb-1.5">Email (Your Login ID) *</label>
+            <input id="reg-email" type="email" required autocomplete="email" placeholder="you@example.com" class="w-full px-3.5 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[44px]" />
           </div>
           <div>
             <label for="reg-password" class="block text-xs font-semibold text-slate-600 mb-1.5">Create Password *</label>
             <div class="relative">
-              <input id="reg-password" type="password" required minlength="4" autocomplete="new-password" placeholder="Minimum 4 characters" class="w-full pl-3.5 pr-11 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[44px]" />
+              <input id="reg-password" type="password" required minlength="6" autocomplete="new-password" placeholder="Minimum 6 characters" class="w-full pl-3.5 pr-11 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[44px]" />
               <button type="button" onclick="togglePasswordVisibility('reg-password', this)" aria-label="Toggle password visibility" class="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-slate-700">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
               </button>
@@ -308,65 +328,61 @@
           <div>
             <label for="reg-confirm-password" class="block text-xs font-semibold text-slate-600 mb-1.5">Confirm Password *</label>
             <div class="relative">
-              <input id="reg-confirm-password" type="password" required minlength="4" autocomplete="new-password" placeholder="Re-enter password" class="w-full pl-3.5 pr-11 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[44px]" />
+              <input id="reg-confirm-password" type="password" required minlength="6" autocomplete="new-password" placeholder="Re-enter password" class="w-full pl-3.5 pr-11 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[44px]" />
               <button type="button" onclick="togglePasswordVisibility('reg-confirm-password', this)" aria-label="Toggle password visibility" class="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-slate-700">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
               </button>
             </div>
           </div>
           <button type="submit" class="w-full min-h-[46px] px-5 py-2.5 text-sm font-bold text-white nav-active-gradient rounded-xl hover:opacity-95 transition-opacity">
-            Create User ID &amp; Enter App
+            Create Account &amp; Send Verification Link
           </button>
         </form>
 
-        <!-- FORGOT USER ID & PASSWORD RECOVERY FORM -->
+        <!-- FORGOT PASSWORD RECOVERY FORM -->
         <form id="auth-forgot-form" onsubmit="handleForgotResetSubmit(event)" class="hidden space-y-4">
           <div class="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
             <div>
-              <h2 class="text-sm font-bold text-slate-900">Recover Access</h2>
-              <p class="text-[11px] text-slate-500">Create a new User ID &amp; Password while keeping your saved data intact.</p>
+              <h2 class="text-sm font-bold text-slate-900">Reset Cloud Password</h2>
+              <p class="text-[11px] text-slate-500">All your cloud records stay 100% intact after resetting.</p>
             </div>
             <button type="button" onclick="switchAuthTab('signin')" class="text-xs font-semibold text-indigo-600 hover:underline shrink-0">
               &larr; Back
             </button>
           </div>
-
-          <div id="forgot-workspace-panel" class="space-y-2"></div>
-
           <div>
-            <label for="forgot-userid" class="block text-xs font-semibold text-slate-600 mb-1.5">New User ID *</label>
-            <input id="forgot-userid" type="text" required minlength="3" maxlength="32" autocomplete="username" placeholder="Enter new User ID (min 3 chars)" class="w-full px-3.5 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[44px]" />
+            <label for="forgot-email" class="block text-xs font-semibold text-slate-600 mb-1.5">Registered Email Address *</label>
+            <input id="forgot-email" type="email" required autocomplete="email" placeholder="you@example.com" class="w-full px-3.5 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[44px]" />
           </div>
-          <div>
-            <label for="forgot-password" class="block text-xs font-semibold text-slate-600 mb-1.5">New Password *</label>
-            <div class="relative">
-              <input id="forgot-password" type="password" required minlength="4" autocomplete="new-password" placeholder="Minimum 4 characters" class="w-full pl-3.5 pr-11 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[44px]" />
-              <button type="button" onclick="togglePasswordVisibility('forgot-password', this)" aria-label="Toggle password visibility" class="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-slate-700">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-              </button>
-            </div>
-          </div>
-          <div>
-            <label for="forgot-confirm-password" class="block text-xs font-semibold text-slate-600 mb-1.5">Confirm New Password *</label>
-            <div class="relative">
-              <input id="forgot-confirm-password" type="password" required minlength="4" autocomplete="new-password" placeholder="Re-enter new password" class="w-full pl-3.5 pr-11 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[44px]" />
-              <button type="button" onclick="togglePasswordVisibility('forgot-confirm-password', this)" aria-label="Toggle password visibility" class="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-slate-700">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-              </button>
-            </div>
-          </div>
-          <label class="flex items-start gap-2.5 text-xs font-medium text-slate-600 cursor-pointer select-none">
-            <input id="forgot-confirm-check" type="checkbox" required class="mt-0.5 w-4 h-4 rounded-sm border-slate-300 text-indigo-600 focus:ring-indigo-500" />
-            <span>I understand this will replace the forgotten User ID &amp; Password while keeping the selected financial records intact.</span>
-          </label>
           <button type="submit" class="w-full min-h-[46px] px-5 py-2.5 text-sm font-bold text-white nav-active-gradient rounded-xl hover:opacity-95 transition-opacity">
-            Save New ID &amp; Password
+            Send Password Reset Link
           </button>
         </form>
+
+        <!-- EMAIL VERIFICATION PENDING PANEL -->
+        <div id="auth-verify-panel" class="hidden space-y-4">
+          <div class="p-4 rounded-2xl bg-amber-50 border border-amber-200 space-y-1.5">
+            <h2 class="text-sm font-bold text-amber-900">Verify Your Email to Unlock Cloud Sync</h2>
+            <p class="text-xs text-amber-800 leading-relaxed">
+              A verification link has been sent to <strong id="verify-email-label">your email</strong>. Open your inbox (and Spam folder), click the link, then press the button below.
+            </p>
+          </div>
+          <button type="button" onclick="handleCheckVerification()" class="w-full min-h-[46px] px-5 py-2.5 text-sm font-bold text-white nav-active-gradient rounded-xl hover:opacity-95 transition-opacity">
+            I&apos;ve Verified &mdash; Enter App
+          </button>
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button" onclick="handleResendVerification()" class="min-h-[40px] px-3 py-2 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-xl hover:bg-indigo-100">
+              Resend Link
+            </button>
+            <button type="button" onclick="signOutUser()" class="min-h-[40px] px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200">
+              Switch Account
+            </button>
+          </div>
+        </div>
       </div>
 
       <p class="text-[11px] text-center text-slate-500">
-        Credentials are salted &amp; hashed locally in your browser. Zero external server required.
+        Sign in from any phone, tablet, or computer worldwide. Your ledger syncs privately to your account.
       </p>
     </div>
   </section>
@@ -415,11 +431,11 @@
             <div id="sidebar-user-avatar" class="w-8 h-8 rounded-lg nav-active-gradient text-white text-xs font-bold flex items-center justify-center shrink-0">U</div>
             <div class="min-w-0 flex-1">
               <p id="sidebar-user-id" class="text-xs font-bold text-slate-900 truncate">User</p>
-              <p class="text-[10px] text-emerald-600 font-semibold">Protected Session</p>
+              <p id="sidebar-user-status" class="text-[10px] text-emerald-600 font-semibold truncate">Cloud Synced</p>
             </div>
           </div>
           <div class="grid grid-cols-2 gap-1.5">
-            <button type="button" onclick="openAccountModal()" title="Change Password" class="flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 transition-colors">
+            <button type="button" onclick="openAccountModal()" title="Account & Password" class="flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 transition-colors">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 0 1 2 2m4 0a6 6 0 0 1-7.743 5.743L11 17H9v2H7v2H4a1 1 0 0 1-1-1v-2.586a1 1 0 0 1 .293-.707l5.964-5.964A6 6 0 1 1 21 9z"/></svg>
               <span>Password</span>
             </button>
@@ -430,7 +446,15 @@
           </div>
         </div>
 
-        <p class="px-1 text-[11px] font-semibold text-slate-400 tracking-wide">Local Storage &amp; Backups</p>
+        <!-- Optional Local-to-Cloud Data Migration Banner -->
+        <div id="local-migrate-banner" class="hidden p-2.5 rounded-xl bg-amber-50 border border-amber-200 space-y-2">
+          <p id="local-migrate-text" class="text-[11px] font-semibold text-amber-900 leading-snug"></p>
+          <button type="button" onclick="handleMigrateLocalToCloud()" class="w-full py-1.5 px-2.5 text-[11px] font-bold text-white nav-active-gradient rounded-lg hover:opacity-95 transition-opacity">
+            Sync Local Records to Cloud
+          </button>
+        </div>
+
+        <p class="px-1 text-[11px] font-semibold text-slate-400 tracking-wide">Cloud Sync &amp; Backups</p>
         <div class="grid grid-cols-2 gap-2">
           <button onclick="exportJSON()" class="flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-colors whitespace-nowrap">
             <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
@@ -654,7 +678,15 @@
           <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
       </div>
-      <form onsubmit="handleChangePasswordSubmit(event)" class="p-5 sm:p-6 space-y-4">
+      <div id="account-google-note" class="hidden p-5 sm:p-6 space-y-4">
+        <div class="p-4 rounded-2xl bg-sky-50 border border-sky-200 text-xs text-sky-900 leading-relaxed">
+          You are signed in with your <strong>Google Account</strong>. Your password and security are managed directly by Google and work across all your devices automatically.
+        </div>
+        <div class="flex justify-end">
+          <button type="button" onclick="closeAccountModal()" class="min-h-[42px] px-5 py-2 text-sm font-semibold text-white nav-active-gradient rounded-xl">Close</button>
+        </div>
+      </div>
+      <form id="account-password-form" onsubmit="handleChangePasswordSubmit(event)" class="p-5 sm:p-6 space-y-4">
         <div id="account-error" class="hidden px-3.5 py-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700"></div>
         <div>
           <label for="acc-current-password" class="block text-xs font-semibold text-slate-600 mb-1.5">Current Password *</label>
@@ -662,11 +694,11 @@
         </div>
         <div>
           <label for="acc-new-password" class="block text-xs font-semibold text-slate-600 mb-1.5">New Password *</label>
-          <input id="acc-new-password" type="password" required minlength="4" autocomplete="new-password" placeholder="Minimum 4 characters" class="w-full px-3.5 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[42px]" />
+          <input id="acc-new-password" type="password" required minlength="6" autocomplete="new-password" placeholder="Minimum 6 characters" class="w-full px-3.5 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[42px]" />
         </div>
         <div>
           <label for="acc-confirm-password" class="block text-xs font-semibold text-slate-600 mb-1.5">Confirm New Password *</label>
-          <input id="acc-confirm-password" type="password" required minlength="4" autocomplete="new-password" class="w-full px-3.5 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[42px]" />
+          <input id="acc-confirm-password" type="password" required minlength="6" autocomplete="new-password" class="w-full px-3.5 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[42px]" />
         </div>
         <div class="pt-3 border-t border-slate-100 flex items-center justify-end gap-3">
           <button type="button" onclick="closeAccountModal()" class="min-h-[42px] px-4 py-2 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl">Cancel</button>
@@ -690,18 +722,7 @@
      * 1. CONSTANTS & MODULE DEFINITIONS
      * =========================================================================
      */
-    const LEGACY_SHARED_STORAGE_KEY = 'wealthledger_v2_data';
-    const AUTH_USERS_KEY = 'wealthledger_v2_users';
-    const AUTH_SESSION_KEY = 'wealthledger_v2_session';
-    const AUTH_REMEMBER_KEY = 'wealthledger_v2_remember';
     let currentUser = null;
-
-    function getActiveStorageKey() {
-      if (currentUser && currentUser.normalizedId) {
-        return `wealthledger_v2_data_${encodeURIComponent(currentUser.normalizedId)}`;
-      }
-      return LEGACY_SHARED_STORAGE_KEY;
-    }
 
     const MODULES = {
       assets: {
@@ -824,59 +845,33 @@
     }
 
     /**
-     * Loads state from localStorage or initializes a clean zero-balance workspace
+     * Initializes default zero-balance workspace state (cloud snapshots hydrate live records)
      */
     function loadState() {
-      // Remove legacy v1 storage key that previously held starter sample data
-      try {
-        localStorage.removeItem('wealthledger_v1_data');
-      } catch (e) {}
-
-      const activeKey = getActiveStorageKey();
-      try {
-        const raw = localStorage.getItem(activeKey);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed && parsed.data) {
-            state.data = {
-              assets: Array.isArray(parsed.data.assets) ? parsed.data.assets : [],
-              bank: Array.isArray(parsed.data.bank) ? parsed.data.bank : [],
-              liabilities: Array.isArray(parsed.data.liabilities) ? parsed.data.liabilities : [],
-              income: Array.isArray(parsed.data.income) ? parsed.data.income : [],
-              expenditure: Array.isArray(parsed.data.expenditure) ? parsed.data.expenditure : []
-            };
-          }
-          if (parsed && parsed.ui) {
-            state.ui = { ...state.ui, ...parsed.ui };
-          }
-          return;
-        }
-      } catch (err) {
-        console.warn('Could not parse saved state; initializing fresh workspace.', err);
-      }
-
-      // First-time load for this user: initialize empty zero-state ledger and current date selectors
       const now = new Date();
       state.ui.selectedMonth = String(now.getMonth() + 1).padStart(2, '0');
       state.ui.selectedYear = String(now.getFullYear());
       state.ui.reportStartDate = `${now.getFullYear()}-01-01`;
       state.ui.reportEndDate = `${now.getFullYear()}-12-31`;
       state.data = createEmptyDataset();
-      saveState();
     }
 
+    let profileSaveTimer = null;
+
     /**
-     * Persists complete state (data + UI filters) to localStorage
+     * Persists UI filters/currency preferences to Cloud Firestore
      */
     function saveState() {
-      try {
-        localStorage.setItem(getActiveStorageKey(), JSON.stringify({
-          data: state.data,
-          ui: state.ui
-        }));
-      } catch (err) {
-        showToast('Failed to save to browser storage. Storage quota may be full.', 'error');
-      }
+      if (!currentUser || !window.WealthLedgerCloud) return;
+      clearTimeout(profileSaveTimer);
+      profileSaveTimer = setTimeout(() => {
+        window.WealthLedgerCloud.saveProfileSettings({
+          ...state.ui,
+          displayName: currentUser.displayName || currentUser.userId
+        }).catch((err) => {
+          console.error('Could not sync preferences:', err);
+        });
+      }, 250);
     }
 
     /**
@@ -1660,7 +1655,7 @@
     function explicitSaveAssets() {
       state.ui.hasUnsavedAssetDraft = false;
       saveState();
-      showToast('All Assets changes saved explicitly to localStorage.', 'success');
+      showToast('All Assets changes are synced to the cloud.', 'success');
     }
 
     function getFilteredModuleRecords(modKey) {
@@ -3178,9 +3173,17 @@
       modal.classList.remove('flex');
     }
 
-    function handleRecordFormSubmit(event) {
+    async function handleRecordFormSubmit(event) {
       event.preventDefault();
+      if (!currentUser || !window.WealthLedgerCloud) {
+        showToast('Please sign in first to save records.', 'error');
+        return;
+      }
+
       const form = event.target;
+      const submitBtn = form.querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.disabled = true;
+
       const fd = new FormData(form);
       const modKey = modalContext.module;
       const editId = modalContext.editId;
@@ -3214,18 +3217,20 @@
         record.description = String(fd.get('description') || '').trim();
       }
 
-      if (editId) {
-        const idx = state.data[modKey].findIndex(r => r.id === editId);
-        if (idx !== -1) state.data[modKey][idx] = record;
-        showToast(`${MODULES[modKey].label} entry updated and saved.`, 'success');
-      } else {
-        state.data[modKey].unshift(record);
-        showToast(`${MODULES[modKey].label} entry added and saved.`, 'success');
+      try {
+        await window.WealthLedgerCloud.upsertRecord(modKey, record, !!editId);
+        closeRecordModal();
+        showToast(
+          editId
+            ? `${MODULES[modKey].label} entry updated and synced.`
+            : `${MODULES[modKey].label} entry added and synced.`,
+          'success'
+        );
+      } catch (err) {
+        showToast('Could not save entry to cloud. Please check your connection.', 'error');
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
       }
-
-      saveState();
-      closeRecordModal();
-      renderAll();
     }
 
     /**
@@ -3236,18 +3241,22 @@
     function confirmDeleteRecord(modKey, id) {
       openConfirmModal(
         'Delete Record',
-        `Are you sure you want to delete this ${MODULES[modKey].label.toLowerCase()} entry? This action cannot be undone.`,
+        `Are you sure you want to delete this ${MODULES[modKey].label.toLowerCase()} entry? This will sync across all devices.`,
         [
           { label: 'Cancel', style: 'secondary', onClick: closeConfirmModal },
           {
             label: 'Delete',
             style: 'danger',
-            onClick: () => {
-              state.data[modKey] = state.data[modKey].filter(r => r.id !== id);
-              saveState();
-              closeConfirmModal();
-              renderAll();
-              showToast('Entry deleted.', 'info');
+            onClick: async () => {
+              try {
+                if (window.WealthLedgerCloud) {
+                  await window.WealthLedgerCloud.deleteRecord(modKey, id);
+                }
+                closeConfirmModal();
+                showToast('Entry deleted from cloud.', 'info');
+              } catch (err) {
+                showToast('Failed to delete entry.', 'error');
+              }
             }
           }
         ]
@@ -3256,19 +3265,23 @@
 
     function openResetModal() {
       openConfirmModal(
-        'Clear All Local Data',
+        'Clear All Cloud Data',
         'Are you sure you want to clear all Assets, Bank, Liabilities, Income, and Expenditure records back to zero? This action cannot be undone.',
         [
           { label: 'Cancel', style: 'secondary', onClick: closeConfirmModal },
           {
             label: 'Clear All Data',
             style: 'danger',
-            onClick: () => {
-              state.data = createEmptyDataset();
-              saveState();
-              closeConfirmModal();
-              renderAll();
-              showToast('All local data cleared to zero.', 'info');
+            onClick: async () => {
+              try {
+                if (window.WealthLedgerCloud) {
+                  await window.WealthLedgerCloud.clearAllRecords();
+                }
+                closeConfirmModal();
+                showToast('All cloud data cleared to zero.', 'info');
+              } catch (err) {
+                showToast('Failed to clear cloud records.', 'error');
+              }
             }
           }
         ]
@@ -3370,7 +3383,7 @@
       const file = event.target.files?.[0];
       if (!file) return;
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         try {
           const parsed = JSON.parse(e.target.result);
           const imported = parsed.data || parsed;
@@ -3378,19 +3391,12 @@
           ['assets', 'bank', 'liabilities', 'income', 'expenditure'].forEach(k => {
             if (!Array.isArray(imported[k])) imported[k] = [];
           });
-          state.data = {
-            assets: imported.assets,
-            bank: imported.bank,
-            liabilities: imported.liabilities,
-            income: imported.income,
-            expenditure: imported.expenditure
-          };
-          if (parsed.ui?.currency) state.ui.currency = parsed.ui.currency;
-          saveState();
-          renderAll();
-          showToast('Backup restored successfully from JSON.', 'success');
+          if (window.WealthLedgerCloud) {
+            await window.WealthLedgerCloud.replaceAllRecords(imported, parsed.ui || {});
+          }
+          showToast('Backup imported and synced to cloud.', 'success');
         } catch (err) {
-          showToast('Invalid backup JSON file.', 'error');
+          showToast('Invalid backup JSON file or sync error.', 'error');
         } finally {
           event.target.value = '';
         }
@@ -3514,164 +3520,9 @@
 
     /**
      * =========================================================================
-     * 12. LOCAL USER ID & PASSWORD AUTHENTICATION SYSTEM
+     * 12. FIREBASE CLOUD AUTHENTICATION & REAL-TIME SYNC CONTROLLER
      * =========================================================================
      */
-    function getStoredUsers() {
-      try {
-        const raw = localStorage.getItem(AUTH_USERS_KEY);
-        const list = raw ? JSON.parse(raw) : [];
-        if (!Array.isArray(list)) return [];
-        return list
-          .filter(u => u && (u.userId || u.normalizedId))
-          .map(u => ({
-            ...u,
-            userId: String(u.userId || u.normalizedId).trim(),
-            normalizedId: String(u.normalizedId || u.userId || '').trim().toLowerCase()
-          }));
-      } catch (err) {
-        return [];
-      }
-    }
-
-    function saveStoredUsers(users) {
-      try {
-        localStorage.setItem(AUTH_USERS_KEY, JSON.stringify(users));
-        return true;
-      } catch (err) {
-        showAuthError('Browser storage is blocked or full. Please allow site storage/cookies to save your User ID.');
-        return false;
-      }
-    }
-
-    function getOrphanedDataKeys(existingUsers) {
-      const knownKeys = new Set(
-        (existingUsers || []).map(u => `wealthledger_v2_data_${encodeURIComponent(u.normalizedId)}`)
-      );
-      const found = [];
-      try {
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (!k) continue;
-          if ((k.startsWith('wealthledger_v2_data_') || k === LEGACY_SHARED_STORAGE_KEY) && !knownKeys.has(k)) {
-            const count = getUserRecordCount(k);
-            if (count > 0) {
-              found.push({ key: k, count });
-            }
-          }
-        }
-      } catch (err) {}
-      return found;
-    }
-
-    function updateSignInAccountHint() {
-      const hint = document.getElementById('signin-account-hint');
-      if (!hint) return;
-      const users = getStoredUsers();
-      const orphaned = getOrphanedDataKeys(users);
-
-      if (users.length > 0) {
-        hint.className = 'px-3.5 py-2.5 rounded-xl bg-emerald-50/80 border border-emerald-200/80 text-xs font-medium text-emerald-800';
-        hint.textContent = `${users.length} saved User ID${users.length > 1 ? 's' : ''} ready on this browser. Enter your User ID & Password to sign in.`;
-        return;
-      }
-
-      if (orphaned.length > 0) {
-        const totalRecs = orphaned.reduce((s, item) => s + item.count, 0);
-        hint.className = 'px-3.5 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs font-medium text-amber-800';
-        hint.innerHTML = `Found <strong>${totalRecs}</strong> saved record(s) without an active User ID on this browser. Use <button type="button" onclick="switchAuthTab('forgot')" class="underline font-bold">Forgot ID &amp; Password?</button> or <button type="button" onclick="switchAuthTab('register')" class="underline font-bold">Create User ID</button> to access them.`;
-        return;
-      }
-
-      hint.className = 'px-3.5 py-2.5 rounded-xl bg-sky-50 border border-sky-200 text-xs font-medium text-sky-800';
-      hint.innerHTML = `No User ID is saved on this browser/URL yet. First time here? Click <button type="button" onclick="switchAuthTab('register')" class="underline font-bold">Create User ID</button> to set up your account.`;
-    }
-
-    function generateSalt() {
-      if (window.crypto && window.crypto.getRandomValues) {
-        const arr = new Uint8Array(16);
-        window.crypto.getRandomValues(arr);
-        return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
-      }
-      return `${Date.now().toString(16)}_${Math.random().toString(16).slice(2)}`;
-    }
-
-    function sha256PureJS(ascii) {
-      function rightRotate(value, amount) {
-        return (value >>> amount) | (value << (32 - amount));
-      }
-      const maxWord = Math.pow(2, 32);
-      const result = [];
-      let words = [];
-      const asciiBitLength = ascii.length * 8;
-      const hash = [];
-      const k = [];
-      let primeCounter = 0;
-      const isComposite = {};
-      for (let candidate = 2; primeCounter < 64; candidate++) {
-        if (!isComposite[candidate]) {
-          for (let i = 0; i < 313; i += candidate) isComposite[i] = candidate;
-          hash[primeCounter] = (Math.pow(candidate, 0.5) * maxWord) | 0;
-          k[primeCounter++] = (Math.pow(candidate, 1 / 3) * maxWord) | 0;
-        }
-      }
-      ascii += '\x80';
-      while (ascii.length % 64 - 56) ascii += '\x00';
-      for (let i = 0; i < ascii.length; i++) {
-        const j = ascii.charCodeAt(i);
-        if (j >> 8) return '';
-        words[i >> 2] |= j << ((3 - i) % 4) * 8;
-      }
-      words[words.length] = (asciiBitLength / maxWord) | 0;
-      words[words.length] = asciiBitLength;
-      for (let j = 0; j < words.length;) {
-        const w = words.slice(j, j += 16);
-        const oldHash = hash.slice(0);
-        for (let i = 0; i < 64; i++) {
-          const w15 = w[i - 15], w2 = w[i - 2];
-          const a = hash[0], e = hash[4];
-          const temp1 = hash[7]
-            + (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25))
-            + ((e & hash[5]) ^ ((~e) & hash[6]))
-            + k[i]
-            + (w[i] = (i < 16) ? w[i] : (
-              w[i - 16]
-              + (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3))
-              + w[i - 7]
-              + (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))
-            ) | 0);
-          const temp2 = (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22))
-            + ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
-          hash[7] = hash[6]; hash[6] = hash[5]; hash[5] = hash[4];
-          hash[4] = (hash[3] + temp1) | 0;
-          hash[3] = hash[2]; hash[2] = hash[1]; hash[1] = hash[0];
-          hash[0] = (temp1 + temp2) | 0;
-        }
-        for (let i = 0; i < 8; i++) hash[i] = (hash[i] + oldHash[i]) | 0;
-      }
-      for (let i = 0; i < 8; i++) {
-        for (let j = 3; j + 1; j--) {
-          const b = (hash[i] >> (j * 8)) & 255;
-          result.push((b < 16 ? '0' : '') + b.toString(16));
-        }
-      }
-      return result.join('');
-    }
-
-    async function hashPassword(password, salt) {
-      const input = `${salt}:${password}`;
-      if (window.crypto && window.crypto.subtle && window.TextEncoder) {
-        try {
-          const data = new TextEncoder().encode(input);
-          const digest = await window.crypto.subtle.digest('SHA-256', data);
-          return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
-        } catch (err) {
-          // Fallback below for restricted origins
-        }
-      }
-      return sha256PureJS(unescape(encodeURIComponent(input)));
-    }
-
     function togglePasswordVisibility(inputId, btn) {
       const input = document.getElementById(inputId);
       if (!input) return;
@@ -3685,6 +3536,8 @@
 
     function showAuthError(msg) {
       const el = document.getElementById('auth-error');
+      const infoEl = document.getElementById('auth-info');
+      if (infoEl) { infoEl.textContent = ''; infoEl.classList.add('hidden'); }
       if (!el) return;
       if (!msg) {
         el.textContent = '';
@@ -3695,111 +3548,38 @@
       }
     }
 
-    function getUserRecordCount(storageKey) {
-      try {
-        const raw = localStorage.getItem(storageKey);
-        if (!raw) return 0;
-        const parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== 'object') return 0;
-        const dataset = (parsed.data && typeof parsed.data === 'object') ? parsed.data : parsed;
-        return ['assets', 'bank', 'liabilities', 'income', 'expenditure']
-          .reduce((sum, key) => sum + (Array.isArray(dataset[key]) ? dataset[key].length : 0), 0);
-      } catch (err) {
-        return 0;
+    function showAuthInfo(msg) {
+      const el = document.getElementById('auth-info');
+      const errEl = document.getElementById('auth-error');
+      if (errEl) { errEl.textContent = ''; errEl.classList.add('hidden'); }
+      if (!el) return;
+      if (!msg) {
+        el.textContent = '';
+        el.classList.add('hidden');
+      } else {
+        el.textContent = msg;
+        el.classList.remove('hidden');
       }
     }
 
-    function maskUserId(userId) {
-      const s = String(userId || '');
-      if (s.length <= 2) return s[0] ? s[0] + '*' : '***';
-      if (s.length <= 4) return s[0] + '*'.repeat(s.length - 1);
-      return s.slice(0, 2) + '***' + s.slice(-2);
-    }
-
-    function populateForgotWorkspaceOptions() {
-      const panel = document.getElementById('forgot-workspace-panel');
-      if (!panel) return;
-      const users = getStoredUsers();
-      const orphaned = getOrphanedDataKeys(users);
-
-      if (users.length === 0) {
-        if (orphaned.length === 1) {
-          panel.innerHTML = `
-            <input type="hidden" id="forgot-source-select" value="__KEY__:${escapeHtml(orphaned[0].key)}" />
-            <div class="px-3.5 py-2.5 rounded-xl bg-sky-50 border border-sky-200 text-xs font-medium text-sky-800">
-              Found <strong>${orphaned[0].count}</strong> existing local record(s). Creating a new User ID &amp; Password below will preserve all of them.
-            </div>
-          `;
-        } else if (orphaned.length > 1) {
-          const sortedOrphans = [...orphaned].sort((a, b) => b.count - a.count);
-          const orphanOpts = sortedOrphans.map((item, idx) =>
-            `<option value="__KEY__:${escapeHtml(item.key)}">Saved Workspace #${idx + 1} — ${item.count} records</option>`
-          ).join('');
-          panel.innerHTML = `
-            <label for="forgot-source-select" class="block text-xs font-semibold text-slate-600 mb-1">Which saved data workspace to recover?</label>
-            <select id="forgot-source-select" class="w-full px-3 py-2.5 text-sm font-medium bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 min-h-[42px]">
-              ${orphanOpts}
-              <option value="__NEW__">Start fresh empty workspace</option>
-            </select>
-          `;
-        } else {
-          panel.innerHTML = `
-            <div class="px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600">
-              No existing User ID found on this browser yet. Enter a new User ID &amp; Password below to get started.
-            </div>
-          `;
-        }
-        return;
-      }
-
-      if (users.length === 1 && orphaned.length === 0) {
-        const u = users[0];
-        const count = getUserRecordCount(`wealthledger_v2_data_${encodeURIComponent(u.normalizedId)}`);
-        panel.innerHTML = `
-          <input type="hidden" id="forgot-source-select" value="${escapeHtml(u.normalizedId)}" />
-          <div class="px-3.5 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-800">
-            Existing local account (<strong>${escapeHtml(maskUserId(u.userId))}</strong> &bull; <strong>${count}</strong> saved records) will stay intact under your new User ID &amp; Password.
-          </div>
-        `;
-        return;
-      }
-
-      const enrichedUsers = users.map((u, idx) => ({
-        user: u,
-        idx,
-        count: getUserRecordCount(`wealthledger_v2_data_${encodeURIComponent(u.normalizedId)}`)
-      })).sort((a, b) => b.count - a.count);
-
-      const optionsHtml = enrichedUsers.map(({ user: u, idx, count }) => {
-        const created = u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'Local';
-        return `<option value="${escapeHtml(u.normalizedId)}">Account #${idx + 1} (${escapeHtml(maskUserId(u.userId))}) — ${count} records (${escapeHtml(created)})</option>`;
-      }).join('');
-
-      const orphanOptionsHtml = orphaned.map((item, idx) =>
-        `<option value="__KEY__:${escapeHtml(item.key)}">Unlinked Local Data #${idx + 1} — ${item.count} records</option>`
-      ).join('');
-
-      panel.innerHTML = `
-        <label for="forgot-source-select" class="block text-xs font-semibold text-slate-600 mb-1">Which saved data workspace to recover?</label>
-        <select id="forgot-source-select" class="w-full px-3 py-2.5 text-sm font-medium bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 min-h-[42px]">
-          ${optionsHtml}
-          ${orphanOptionsHtml}
-          <option value="__NEW__">Start fresh workspace (keep other accounts unchanged)</option>
-        </select>
-      `;
-    }
-
-    function switchAuthTab(mode, preserveError = false) {
-      if (!preserveError) showAuthError('');
+    function switchAuthTab(mode) {
+      showAuthError('');
+      showAuthInfo('');
+      const googleWrap = document.getElementById('auth-google-wrap');
+      const modeTabs = document.getElementById('auth-mode-tabs');
       const signinBtn = document.getElementById('auth-tab-signin');
       const regBtn = document.getElementById('auth-tab-register');
       const signinForm = document.getElementById('auth-signin-form');
       const regForm = document.getElementById('auth-register-form');
       const forgotForm = document.getElementById('auth-forgot-form');
-      const legacyNotice = document.getElementById('reg-legacy-notice');
+      const verifyPanel = document.getElementById('auth-verify-panel');
 
       const activeCls = 'py-2.5 px-3 text-xs sm:text-sm font-bold rounded-xl transition-all nav-active-gradient text-white shadow-xs';
       const idleCls = 'py-2.5 px-3 text-xs sm:text-sm font-bold rounded-xl transition-all text-slate-600 hover:text-slate-900';
+
+      if (verifyPanel) verifyPanel.classList.add('hidden');
+      if (googleWrap) googleWrap.classList.remove('hidden');
+      if (modeTabs) modeTabs.classList.remove('hidden');
 
       if (mode === 'register') {
         signinBtn.className = idleCls;
@@ -3807,164 +3587,130 @@
         signinForm.classList.add('hidden');
         regForm.classList.remove('hidden');
         if (forgotForm) forgotForm.classList.add('hidden');
-        const users = getStoredUsers();
-        const hasLegacy = (!!localStorage.getItem(LEGACY_SHARED_STORAGE_KEY) || getOrphanedDataKeys(users).length > 0) && users.length === 0;
-        if (legacyNotice) legacyNotice.classList.toggle('hidden', !hasLegacy);
       } else if (mode === 'forgot') {
         signinBtn.className = idleCls;
         regBtn.className = idleCls;
         signinForm.classList.add('hidden');
         regForm.classList.add('hidden');
-        if (forgotForm) {
-          forgotForm.classList.remove('hidden');
-          populateForgotWorkspaceOptions();
-        }
+        if (forgotForm) forgotForm.classList.remove('hidden');
+      } else if (mode === 'verify') {
+        if (googleWrap) googleWrap.classList.add('hidden');
+        if (modeTabs) modeTabs.classList.add('hidden');
+        signinForm.classList.add('hidden');
+        regForm.classList.add('hidden');
+        if (forgotForm) forgotForm.classList.add('hidden');
+        if (verifyPanel) verifyPanel.classList.remove('hidden');
       } else {
         signinBtn.className = activeCls;
         regBtn.className = idleCls;
         signinForm.classList.remove('hidden');
         regForm.classList.add('hidden');
         if (forgotForm) forgotForm.classList.add('hidden');
-        updateSignInAccountHint();
       }
     }
 
-    function enterAuthenticatedApp(user) {
-      currentUser = { userId: user.userId, normalizedId: user.normalizedId };
+    function refreshLocalMigrationBanner() {
+      const banner = document.getElementById('local-migrate-banner');
+      const textEl = document.getElementById('local-migrate-text');
+      if (!banner || !textEl || !window.WealthLedgerCloud) return;
+      const summary = window.WealthLedgerCloud.getLocalBackupSummary();
+      if (summary.totalRecords > 0) {
+        textEl.textContent = `Found ${summary.totalRecords} local record(s) saved on this browser. Sync them to your cloud account?`;
+        banner.classList.remove('hidden');
+      } else {
+        banner.classList.add('hidden');
+      }
+    }
+
+    async function handleMigrateLocalToCloud() {
+      if (!window.WealthLedgerCloud || !currentUser) return;
       try {
-        sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(currentUser));
-        localStorage.removeItem(AUTH_REMEMBER_KEY);
-      } catch (err) {}
+        const count = await window.WealthLedgerCloud.migrateLocalBackupsToCloud(true);
+        refreshLocalMigrationBanner();
+        if (count > 0) {
+          showToast(`${count} local record(s) synced to your cloud account.`, 'success');
+        }
+      } catch (err) {
+        showToast('Failed to migrate local records to cloud.', 'error');
+      }
+    }
 
-      document.getElementById('auth-gate').classList.add('hidden');
-      document.getElementById('app-shell').classList.remove('hidden');
-
-      const avatarEl = document.getElementById('sidebar-user-avatar');
-      const idEl = document.getElementById('sidebar-user-id');
-      if (avatarEl) avatarEl.textContent = user.userId.slice(0, 2).toUpperCase();
-      if (idEl) idEl.textContent = user.userId;
-
-      loadState();
-      renderAll();
+    async function handleGoogleSignIn() {
+      if (!window.WealthLedgerCloud) {
+        showAuthError('Cloud service is still loading. Please wait a moment and try again.');
+        return;
+      }
+      showAuthError('');
+      const btn = document.getElementById('google-signin-btn');
+      if (btn) btn.disabled = true;
+      try {
+        const res = await window.WealthLedgerCloud.signInWithGoogle();
+        if (!res.ok) showAuthError(res.error || 'Google Sign-In failed.');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
     }
 
     async function handleCreateUserSubmit(event) {
       event.preventDefault();
-      showAuthError('');
-
-      const userIdRaw = String(document.getElementById('reg-userid').value || '').trim();
-      const password = String(document.getElementById('reg-password').value || '');
-      const confirm = String(document.getElementById('reg-confirm-password').value || '');
-
-      if (userIdRaw.length < 3) {
-        showAuthError('User ID must be at least 3 characters long.');
-        return;
-      }
-      if (!/^[a-zA-Z0-9._-]+$/.test(userIdRaw)) {
-        showAuthError('User ID can only contain letters, numbers, dot (.), underscore (_), or hyphen (-).');
-        return;
-      }
-      if (password.length < 4) {
-        showAuthError('Password must be at least 4 characters long.');
-        return;
-      }
-      if (password !== confirm) {
-        showAuthError('Password and Confirm Password do not match.');
-        return;
-      }
-
-      const users = getStoredUsers();
-      const normalizedId = userIdRaw.toLowerCase();
-      if (users.some(u => u.normalizedId === normalizedId)) {
-        showAuthError('This User ID already exists. Please sign in or choose a different User ID.');
-        return;
-      }
-
-      const salt = generateSalt();
-      const passwordHash = await hashPassword(password, salt);
-      const newUser = {
-        userId: userIdRaw,
-        normalizedId,
-        salt,
-        passwordHash,
-        createdAt: new Date().toISOString()
-      };
-
-      // If this is the first user account, preserve any existing legacy/unlinked records
-      if (users.length === 0) {
-        try {
-          const scopedKey = `wealthledger_v2_data_${encodeURIComponent(normalizedId)}`;
-          const existingData = localStorage.getItem(LEGACY_SHARED_STORAGE_KEY);
-          if (existingData && !localStorage.getItem(scopedKey)) {
-            localStorage.setItem(scopedKey, existingData);
-          }
-          localStorage.removeItem(LEGACY_SHARED_STORAGE_KEY);
-
-          const orphaned = getOrphanedDataKeys([]);
-          if (orphaned.length === 1 && !localStorage.getItem(scopedKey)) {
-            const orphanRaw = localStorage.getItem(orphaned[0].key);
-            if (orphanRaw) {
-              localStorage.setItem(scopedKey, orphanRaw);
-              if (orphaned[0].key !== scopedKey) {
-                localStorage.removeItem(orphaned[0].key);
-              }
-            }
-          }
-        } catch (err) {}
-      }
-
-      users.push(newUser);
-      if (!saveStoredUsers(users)) return;
-
-      document.getElementById('reg-password').value = '';
-      document.getElementById('reg-confirm-password').value = '';
-      enterAuthenticatedApp(newUser);
-      showToast(`User ID "${newUser.userId}" created and signed in.`, 'success');
-    }
-
-    async function handleSignInSubmit(event) {
-      event.preventDefault();
+      if (!window.WealthLedgerCloud) return;
       showAuthError('');
 
       const submitBtn = event.target?.querySelector('button[type="submit"]');
       if (submitBtn) submitBtn.disabled = true;
 
       try {
-        const userIdRaw = String(document.getElementById('login-userid').value || '').trim();
+        const name = String(document.getElementById('reg-name').value || '').trim();
+        const email = String(document.getElementById('reg-email').value || '').trim();
+        const password = String(document.getElementById('reg-password').value || '');
+        const confirm = String(document.getElementById('reg-confirm-password').value || '');
+
+        if (name.length < 2) {
+          showAuthError('Please enter your name (at least 2 characters).');
+          return;
+        }
+        if (password.length < 6) {
+          showAuthError('Password must be at least 6 characters long.');
+          return;
+        }
+        if (password !== confirm) {
+          showAuthError('Password and Confirm Password do not match.');
+          return;
+        }
+
+        const res = await window.WealthLedgerCloud.registerWithEmail(name, email, password);
+        if (!res.ok) {
+          showAuthError(res.error || 'Could not create account.');
+          return;
+        }
+        document.getElementById('reg-password').value = '';
+        document.getElementById('reg-confirm-password').value = '';
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    }
+
+    async function handleSignInSubmit(event) {
+      event.preventDefault();
+      if (!window.WealthLedgerCloud) return;
+      showAuthError('');
+
+      const submitBtn = event.target?.querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        const email = String(document.getElementById('login-email').value || '').trim();
         const password = String(document.getElementById('login-password').value || '');
-
-        if (!userIdRaw || !password) {
-          showAuthError('Please enter both User ID and Password.');
+        if (!email || !password) {
+          showAuthError('Please enter both Email and Password.');
           return;
         }
-
-        const users = getStoredUsers();
-        if (users.length === 0) {
-          const orphaned = getOrphanedDataKeys([]);
-          if (orphaned.length > 0) {
-            showAuthError('Saved data exists on this browser, but no User ID is linked yet. Click "Forgot ID & Password?" below to set a User ID & Password without losing data.');
-          } else {
-            showAuthError('No User ID is saved on this browser/URL yet. Please click "Create User ID" above to register on this browser first.');
-          }
+        const res = await window.WealthLedgerCloud.signInWithEmail(email, password);
+        if (!res.ok) {
+          showAuthError(res.error || 'Sign-in failed.');
           return;
         }
-
-        const normalizedId = userIdRaw.toLowerCase();
-        const matched = users.find(u => u.normalizedId === normalizedId);
-        if (!matched) {
-          showAuthError(`User ID "${userIdRaw}" was not found on this browser. Check spelling or click "Forgot ID & Password?" to recover.`);
-          return;
-        }
-
-        const candidateHash = await hashPassword(password, matched.salt);
-        if (candidateHash !== matched.passwordHash) {
-          showAuthError('Incorrect Password for this User ID. Try again or use "Forgot ID & Password?".');
-          return;
-        }
-
         document.getElementById('login-password').value = '';
-        enterAuthenticatedApp(matched);
-        showToast(`Welcome back, ${matched.userId}.`, 'success');
       } finally {
         if (submitBtn) submitBtn.disabled = false;
       }
@@ -3972,117 +3718,50 @@
 
     async function handleForgotResetSubmit(event) {
       event.preventDefault();
+      if (!window.WealthLedgerCloud) return;
       showAuthError('');
 
-      const userIdRaw = String(document.getElementById('forgot-userid').value || '').trim();
-      const password = String(document.getElementById('forgot-password').value || '');
-      const confirm = String(document.getElementById('forgot-confirm-password').value || '');
-      const confirmedCheck = !!document.getElementById('forgot-confirm-check')?.checked;
+      const submitBtn = event.target?.querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.disabled = true;
 
-      if (userIdRaw.length < 3) {
-        showAuthError('New User ID must be at least 3 characters long.');
-        return;
-      }
-      if (!/^[a-zA-Z0-9._-]+$/.test(userIdRaw)) {
-        showAuthError('User ID can only contain letters, numbers, dot (.), underscore (_), or hyphen (-).');
-        return;
-      }
-      if (password.length < 4) {
-        showAuthError('New Password must be at least 4 characters long.');
-        return;
-      }
-      if (password !== confirm) {
-        showAuthError('New Password and Confirm New Password do not match.');
-        return;
-      }
-      if (!confirmedCheck) {
-        showAuthError('Please tick the confirmation box to proceed.');
-        return;
-      }
-
-      const users = getStoredUsers();
-      const sourceEl = document.getElementById('forgot-source-select');
-      const sourceVal = sourceEl ? String(sourceEl.value || '') : '';
-      const isDirectKey = sourceVal.startsWith('__KEY__:');
-      const targetKeyOverride = isDirectKey ? sourceVal.slice(8) : null;
-      const targetOldNormalizedId = !isDirectKey && sourceVal && sourceVal !== '__NEW__'
-        ? sourceVal
-        : (!isDirectKey && users.length === 1 ? users[0].normalizedId : null);
-
-      const newNormalizedId = userIdRaw.toLowerCase();
-      const collision = users.some(u => u.normalizedId === newNormalizedId && u.normalizedId !== targetOldNormalizedId);
-      if (collision) {
-        showAuthError('This User ID already belongs to another account. Please choose a different User ID.');
-        return;
-      }
-
-      const salt = generateSalt();
-      const passwordHash = await hashPassword(password, salt);
-      const newUser = {
-        userId: userIdRaw,
-        normalizedId: newNormalizedId,
-        salt,
-        passwordHash,
-        createdAt: new Date().toISOString()
-      };
-
-      const newKey = `wealthledger_v2_data_${encodeURIComponent(newNormalizedId)}`;
-
-      if (targetKeyOverride) {
-        try {
-          const preservedRaw = localStorage.getItem(targetKeyOverride);
-          if (preservedRaw !== null) {
-            localStorage.setItem(newKey, preservedRaw);
-          }
-          if (newKey !== targetKeyOverride && localStorage.getItem(newKey) !== null) {
-            localStorage.removeItem(targetKeyOverride);
-          }
-        } catch (err) {}
-        users.push(newUser);
-      } else if (targetOldNormalizedId) {
-        const idx = users.findIndex(u => u.normalizedId === targetOldNormalizedId);
-        const oldKey = `wealthledger_v2_data_${encodeURIComponent(targetOldNormalizedId)}`;
-        try {
-          const preservedRaw = localStorage.getItem(oldKey);
-          if (preservedRaw !== null) {
-            localStorage.setItem(newKey, preservedRaw);
-          }
-          if (newKey !== oldKey && localStorage.getItem(newKey) !== null) {
-            localStorage.removeItem(oldKey);
-          }
-        } catch (err) {}
-
-        if (idx !== -1) {
-          users[idx] = newUser;
-        } else {
-          users.push(newUser);
+      try {
+        const email = String(document.getElementById('forgot-email').value || '').trim();
+        if (!email) {
+          showAuthError('Please enter your registered email address.');
+          return;
         }
-      } else {
-        if (users.length === 0) {
-          try {
-            const existingLegacy = localStorage.getItem(LEGACY_SHARED_STORAGE_KEY);
-            if (existingLegacy && !localStorage.getItem(newKey)) {
-              localStorage.setItem(newKey, existingLegacy);
-            }
-            localStorage.removeItem(LEGACY_SHARED_STORAGE_KEY);
-          } catch (err) {}
+        const res = await window.WealthLedgerCloud.sendPasswordReset(email);
+        if (!res.ok) {
+          showAuthError(res.error || 'Could not send reset email.');
+          return;
         }
-        users.push(newUser);
+        showAuthInfo(`Password reset link sent to ${email}. Check your inbox (and Spam), set your new password, then sign in. All your data remains intact.`);
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
       }
-
-      if (!saveStoredUsers(users)) return;
-
-      document.getElementById('forgot-userid').value = '';
-      document.getElementById('forgot-password').value = '';
-      document.getElementById('forgot-confirm-password').value = '';
-      const chk = document.getElementById('forgot-confirm-check');
-      if (chk) chk.checked = false;
-
-      enterAuthenticatedApp(newUser);
-      showToast(`New User ID "${newUser.userId}" saved. All records remain intact.`, 'success');
     }
 
-    function signOutUser() {
+    async function handleCheckVerification() {
+      if (!window.WealthLedgerCloud) return;
+      showAuthError('');
+      const res = await window.WealthLedgerCloud.checkVerificationAndEnter();
+      if (!res.ok) {
+        showAuthError(res.error || 'Email not verified yet.');
+      }
+    }
+
+    async function handleResendVerification() {
+      if (!window.WealthLedgerCloud) return;
+      showAuthError('');
+      const res = await window.WealthLedgerCloud.resendVerificationEmail();
+      if (res.ok) {
+        showAuthInfo('Verification link resent! Check your inbox and Spam folder.');
+      } else {
+        showAuthError(res.error || 'Could not resend verification email.');
+      }
+    }
+
+    async function signOutUser() {
       closeRecordModal();
       closeConfirmModal();
       closePrintPreviewModal();
@@ -4090,32 +3769,31 @@
       toggleMobileSidebar(false);
       destroyAllCharts();
 
-      currentUser = null;
-      state.data = createEmptyDataset();
-      try {
-        sessionStorage.removeItem(AUTH_SESSION_KEY);
-        localStorage.removeItem(AUTH_REMEMBER_KEY);
-      } catch (err) {}
-
-      const loginUid = document.getElementById('login-userid');
-      const loginPwd = document.getElementById('login-password');
-      if (loginUid) loginUid.value = '';
-      if (loginPwd) loginPwd.value = '';
-
-      document.getElementById('app-shell').classList.add('hidden');
-      document.getElementById('auth-gate').classList.remove('hidden');
-      switchAuthTab(getStoredUsers().length > 0 ? 'signin' : 'register');
-      showToast('Logged off safely. Sign in with your User ID & Password.', 'info');
+      if (window.WealthLedgerCloud) {
+        await window.WealthLedgerCloud.signOutCloud();
+      }
+      showToast('Logged off safely.', 'info');
     }
 
     function openAccountModal() {
       if (!currentUser) return;
       const errEl = document.getElementById('account-error');
       if (errEl) { errEl.textContent = ''; errEl.classList.add('hidden'); }
-      document.getElementById('account-modal-userid').textContent = `User ID: ${currentUser.userId}`;
-      document.getElementById('acc-current-password').value = '';
-      document.getElementById('acc-new-password').value = '';
-      document.getElementById('acc-confirm-password').value = '';
+      document.getElementById('account-modal-userid').textContent = `${currentUser.displayName} (${currentUser.email})`;
+
+      const googleNote = document.getElementById('account-google-note');
+      const pwdForm = document.getElementById('account-password-form');
+      if (currentUser.isPasswordUser) {
+        if (googleNote) googleNote.classList.add('hidden');
+        if (pwdForm) pwdForm.classList.remove('hidden');
+        document.getElementById('acc-current-password').value = '';
+        document.getElementById('acc-new-password').value = '';
+        document.getElementById('acc-confirm-password').value = '';
+      } else {
+        if (googleNote) googleNote.classList.remove('hidden');
+        if (pwdForm) pwdForm.classList.add('hidden');
+      }
+
       const modal = document.getElementById('account-modal');
       modal.classList.remove('hidden');
       modal.classList.add('flex');
@@ -4130,7 +3808,7 @@
 
     async function handleChangePasswordSubmit(event) {
       event.preventDefault();
-      if (!currentUser) return;
+      if (!currentUser || !window.WealthLedgerCloud) return;
       const errEl = document.getElementById('account-error');
       const setErr = (msg) => {
         if (!msg) { errEl.textContent = ''; errEl.classList.add('hidden'); }
@@ -4142,20 +3820,8 @@
       const newPwd = String(document.getElementById('acc-new-password').value || '');
       const confPwd = String(document.getElementById('acc-confirm-password').value || '');
 
-      const users = getStoredUsers();
-      const idx = users.findIndex(u => u.normalizedId === currentUser.normalizedId);
-      if (idx === -1) {
-        setErr('User account record not found.');
-        return;
-      }
-
-      const curHash = await hashPassword(curPwd, users[idx].salt);
-      if (curHash !== users[idx].passwordHash) {
-        setErr('Current password is incorrect.');
-        return;
-      }
-      if (newPwd.length < 4) {
-        setErr('New password must be at least 4 characters long.');
+      if (newPwd.length < 6) {
+        setErr('New password must be at least 6 characters long.');
         return;
       }
       if (newPwd !== confPwd) {
@@ -4163,39 +3829,98 @@
         return;
       }
 
-      const newSalt = generateSalt();
-      users[idx].salt = newSalt;
-      users[idx].passwordHash = await hashPassword(newPwd, newSalt);
-      saveStoredUsers(users);
-      closeAccountModal();
-      showToast('Password updated successfully.', 'success');
-    }
-
-    function restoreSessionOnBoot() {
-      const users = getStoredUsers();
-      try { localStorage.removeItem(AUTH_REMEMBER_KEY); } catch (err) {}
-      let rawSession = null;
-      try { rawSession = sessionStorage.getItem(AUTH_SESSION_KEY); } catch (err) {}
-      if (rawSession && users.length > 0) {
-        try {
-          const parsed = JSON.parse(rawSession);
-          const matched = users.find(u => u.normalizedId === parsed?.normalizedId);
-          if (matched) {
-            enterAuthenticatedApp(matched);
-            return;
-          }
-        } catch (err) {}
+      const res = await window.WealthLedgerCloud.changePassword(curPwd, newPwd);
+      if (!res.ok) {
+        setErr(res.error || 'Could not update password.');
+        return;
       }
-
-      document.getElementById('app-shell').classList.add('hidden');
-      document.getElementById('auth-gate').classList.remove('hidden');
-      switchAuthTab(users.length > 0 ? 'signin' : 'register');
+      closeAccountModal();
+      showToast('Cloud password updated successfully.', 'success');
     }
 
-    // Initialize Application with Authentication Gate
-    document.addEventListener('DOMContentLoaded', () => {
-      restoreSessionOnBoot();
-    });
+    let cloudInitialized = false;
+    function bootCloudBridge() {
+      if (cloudInitialized || !window.WealthLedgerCloud) return;
+      cloudInitialized = true;
+
+      loadState();
+      window.WealthLedgerCloud.init(
+        {
+          onAuthSignedOut: () => {
+            currentUser = null;
+            state.data = createEmptyDataset();
+            destroyAllCharts();
+            document.getElementById('app-shell').classList.add('hidden');
+            document.getElementById('auth-gate').classList.remove('hidden');
+            switchAuthTab('signin');
+          },
+          onAuthNeedsVerification: (u) => {
+            currentUser = null;
+            document.getElementById('app-shell').classList.add('hidden');
+            document.getElementById('auth-gate').classList.remove('hidden');
+            const lbl = document.getElementById('verify-email-label');
+            if (lbl) lbl.textContent = u.email || 'your email';
+            switchAuthTab('verify');
+          },
+          onAuthReady: (u) => {
+            currentUser = {
+              uid: u.uid,
+              userId: u.email || u.displayName,
+              normalizedId: u.uid,
+              email: u.email,
+              displayName: u.displayName,
+              isPasswordUser: u.isPasswordUser
+            };
+            document.getElementById('auth-gate').classList.add('hidden');
+            document.getElementById('app-shell').classList.remove('hidden');
+
+            const avatarEl = document.getElementById('sidebar-user-avatar');
+            const idEl = document.getElementById('sidebar-user-id');
+            const statusEl = document.getElementById('sidebar-user-status');
+            if (avatarEl) avatarEl.textContent = (u.displayName || u.email || 'U').slice(0, 2).toUpperCase();
+            if (idEl) idEl.textContent = u.displayName || u.email;
+            if (statusEl) statusEl.textContent = u.email ? `${u.email}` : 'Cloud Synced';
+
+            loadState();
+            renderAll();
+            refreshLocalMigrationBanner();
+          },
+          onProfileUpdate: (profile) => {
+            if (!profile || !currentUser) return;
+            const fields = ['currency', 'selectedMonth', 'selectedYear', 'reportStartDate', 'reportEndDate', 'reportPreset', 'netWorthRange'];
+            let changed = false;
+            fields.forEach((f) => {
+              if (profile[f] !== undefined && state.ui[f] !== profile[f]) {
+                state.ui[f] = profile[f];
+                changed = true;
+              }
+            });
+            if (profile.displayName && currentUser.displayName !== profile.displayName) {
+              currentUser.displayName = profile.displayName;
+              const idEl = document.getElementById('sidebar-user-id');
+              if (idEl) idEl.textContent = profile.displayName;
+            }
+            if (changed) renderAll();
+          },
+          onModuleSnapshot: (modKey, items) => {
+            state.data[modKey] = Array.isArray(items) ? items : [];
+            renderAll();
+          },
+          onSyncError: (msg) => {
+            console.error('Cloud sync error:', msg);
+            if (String(msg).includes('Quota exceeded')) {
+              showToast('Cloud Firestore daily quota exceeded. Please try again tomorrow.', 'error');
+            } else {
+              showToast('Cloud sync error. Check network or permissions.', 'error');
+            }
+          }
+        },
+        state.ui
+      );
+    }
+
+    window.onWealthLedgerCloudLoaded = bootCloudBridge;
+    document.addEventListener('DOMContentLoaded', bootCloudBridge);
   </script>
 </body>
 </html>
