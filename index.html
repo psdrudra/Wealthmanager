@@ -17,7 +17,7 @@
   <!-- Tailwind CSS via CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Firebase Cloud Auth & Firestore Sync Bridge -->
-  <script type="module" src="/src/cloudLedger.ts"></script>
+  <script type="module" src="/src/cloudLedger.ts" onerror="window.__wlCloudScriptFailed = true;"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -3636,14 +3636,15 @@
     }
 
     async function handleGoogleSignIn() {
-      if (!window.WealthLedgerCloud) {
-        showAuthError('Cloud service is still loading. Please wait a moment and try again.');
-        return;
-      }
       showAuthError('');
       const btn = document.getElementById('google-signin-btn');
       if (btn) btn.disabled = true;
       try {
+        const ready = await ensureCloudReady();
+        if (!ready || !window.WealthLedgerCloud) {
+          showAuthError('Unable to reach Firebase Cloud services. Please check your internet connection or disable ad/script blockers and try again.');
+          return;
+        }
         const res = await window.WealthLedgerCloud.signInWithGoogle();
         if (!res.ok) showAuthError(res.error || 'Google Sign-In failed.');
       } finally {
@@ -3653,13 +3654,17 @@
 
     async function handleCreateUserSubmit(event) {
       event.preventDefault();
-      if (!window.WealthLedgerCloud) return;
       showAuthError('');
 
       const submitBtn = event.target?.querySelector('button[type="submit"]');
       if (submitBtn) submitBtn.disabled = true;
 
       try {
+        const ready = await ensureCloudReady();
+        if (!ready || !window.WealthLedgerCloud) {
+          showAuthError('Unable to reach Firebase Cloud services. Please check your internet connection or disable ad/script blockers and try again.');
+          return;
+        }
         const name = String(document.getElementById('reg-name').value || '').trim();
         const email = String(document.getElementById('reg-email').value || '').trim();
         const password = String(document.getElementById('reg-password').value || '');
@@ -3692,13 +3697,17 @@
 
     async function handleSignInSubmit(event) {
       event.preventDefault();
-      if (!window.WealthLedgerCloud) return;
       showAuthError('');
 
       const submitBtn = event.target?.querySelector('button[type="submit"]');
       if (submitBtn) submitBtn.disabled = true;
 
       try {
+        const ready = await ensureCloudReady();
+        if (!ready || !window.WealthLedgerCloud) {
+          showAuthError('Unable to reach Firebase Cloud services. Please check your internet connection or disable ad/script blockers and try again.');
+          return;
+        }
         const email = String(document.getElementById('login-email').value || '').trim();
         const password = String(document.getElementById('login-password').value || '');
         if (!email || !password) {
@@ -3718,13 +3727,17 @@
 
     async function handleForgotResetSubmit(event) {
       event.preventDefault();
-      if (!window.WealthLedgerCloud) return;
       showAuthError('');
 
       const submitBtn = event.target?.querySelector('button[type="submit"]');
       if (submitBtn) submitBtn.disabled = true;
 
       try {
+        const ready = await ensureCloudReady();
+        if (!ready || !window.WealthLedgerCloud) {
+          showAuthError('Unable to reach Firebase Cloud services. Please check your internet connection and try again.');
+          return;
+        }
         const email = String(document.getElementById('forgot-email').value || '').trim();
         if (!email) {
           showAuthError('Please enter your registered email address.');
@@ -3742,8 +3755,12 @@
     }
 
     async function handleCheckVerification() {
-      if (!window.WealthLedgerCloud) return;
       showAuthError('');
+      const ready = await ensureCloudReady();
+      if (!ready || !window.WealthLedgerCloud) {
+        showAuthError('Cloud service is still connecting. Please try again.');
+        return;
+      }
       const res = await window.WealthLedgerCloud.checkVerificationAndEnter();
       if (!res.ok) {
         showAuthError(res.error || 'Email not verified yet.');
@@ -3751,8 +3768,12 @@
     }
 
     async function handleResendVerification() {
-      if (!window.WealthLedgerCloud) return;
       showAuthError('');
+      const ready = await ensureCloudReady();
+      if (!ready || !window.WealthLedgerCloud) {
+        showAuthError('Cloud service is still connecting. Please try again.');
+        return;
+      }
       const res = await window.WealthLedgerCloud.resendVerificationEmail();
       if (res.ok) {
         showAuthInfo('Verification link resent! Check your inbox and Spam folder.');
@@ -3919,8 +3940,583 @@
       );
     }
 
+    let cloudFallbackPromise = null;
+    async function ensureCloudReady() {
+      if (window.WealthLedgerCloud) {
+        bootCloudBridge();
+        return true;
+      }
+      if (!cloudFallbackPromise) {
+        cloudFallbackPromise = (async () => {
+          try {
+            const cdnBase = 'https://www.gstatic.com/firebasejs/11.6.1/';
+            const [appMod, authMod, fsMod] = await Promise.all([
+              import(cdnBase + 'firebase-app.js'),
+              import(cdnBase + 'firebase-auth.js'),
+              import(cdnBase + 'firebase-firestore.js')
+            ]);
+            if (window.WealthLedgerCloud) {
+              bootCloudBridge();
+              return true;
+            }
+            const firebaseConfig = {
+              projectId: 'sound-replica-9pd8p',
+              appId: '1:31455804819:web:f63ff13861ed7e57827c66',
+              apiKey: 'AIzaSyBWVCAKliiJr3Ue9awt56CsCmEikrvpxjs',
+              authDomain: 'sound-replica-9pd8p.firebaseapp.com',
+              firestoreDatabaseId: 'ai-studio-wealthledgerpers-9a099347-a84e-442e-b48b-530d5d28b9a3',
+              storageBucket: 'sound-replica-9pd8p.firebasestorage.app',
+              messagingSenderId: '31455804819'
+            };
+            const app = appMod.initializeApp(firebaseConfig);
+            const db = fsMod.getFirestore(app, firebaseConfig.firestoreDatabaseId);
+            const auth = authMod.getAuth(app);
+            const googleProvider = new authMod.GoogleAuthProvider();
+            googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+            const OperationType = {
+              CREATE: 'create',
+              UPDATE: 'update',
+              DELETE: 'delete',
+              LIST: 'list',
+              GET: 'get',
+              WRITE: 'write'
+            };
+
+            function handleFirestoreError(error, operationType, path) {
+              const errInfo = {
+                error: error instanceof Error ? error.message : String(error),
+                authInfo: {
+                  userId: auth.currentUser ? auth.currentUser.uid : null,
+                  email: auth.currentUser ? auth.currentUser.email : null,
+                  emailVerified: auth.currentUser ? auth.currentUser.emailVerified : null,
+                  isAnonymous: auth.currentUser ? auth.currentUser.isAnonymous : null,
+                  tenantId: auth.currentUser ? auth.currentUser.tenantId : null,
+                  providerInfo: auth.currentUser && auth.currentUser.providerData
+                    ? auth.currentUser.providerData.map((p) => ({ providerId: p.providerId, email: p.email }))
+                    : []
+                },
+                operationType,
+                path
+              };
+              console.error('Firestore Error: ', JSON.stringify(errInfo));
+              throw new Error(JSON.stringify(errInfo));
+            }
+
+            (async function testConnection() {
+              try {
+                await fsMod.getDocFromServer(fsMod.doc(db, 'test', 'connection'));
+              } catch (error) {
+                if (error instanceof Error && error.message.includes('the client is offline')) {
+                  console.error('Please check your Firebase configuration.');
+                }
+              }
+            })();
+
+            const MODULE_KEYS = ['assets', 'bank', 'liabilities', 'income', 'expenditure'];
+            const ALLOWED_CURRENCIES = ['$', '৳', '€', '£', '₹'];
+            const ALLOWED_REPORT_PRESETS = ['month', '3m', 'last3', 'year', 'fy', 'all', 'custom'];
+            const ALLOWED_NET_WORTH_RANGES = ['1M', '3M', '6M', 'YTD', 'All'];
+            const CATEGORY_ALLOWLISTS = {
+              assets: ['Land', 'Building', 'Furniture', 'Gold', 'Other'],
+              bank: ['FDR', 'Sanchaypatra', 'DPS'],
+              liabilities: ['Bank Liabilities', 'Other'],
+              income: ['Salary', 'TA/DA', 'Lunch Allowance', 'Bank Interest', 'Sanchaypatra Interest', 'Other Receipt'],
+              expenditure: [
+                'House Rent', 'Loan Deduction', 'Grocery', 'Education', 'Shopping',
+                'Donation', 'Gift', 'Vegetables', 'Fish & Meats', 'Other Expenditure'
+              ]
+            };
+
+            const todayYMD = () => {
+              const d = new Date();
+              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            };
+            const normalizeYMD = (val) => {
+              const s = String(val ?? '').trim();
+              return /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(s) ? s : todayYMD();
+            };
+            const clampStr = (val, maxLen, fallback = '') => {
+              const s = String(val ?? '').trim();
+              return s ? s.slice(0, maxLen) : fallback;
+            };
+            const nonNegNum = (val) => {
+              const n = Number(val);
+              return (!Number.isFinite(n) || n < 0) ? 0 : Math.round(n * 100) / 100;
+            };
+            const sanitizeId = (rawId, prefix = 'rec') => {
+              const cleaned = String(rawId ?? '').trim().replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 120);
+              if (cleaned && /^[a-zA-Z0-9_\-]+$/.test(cleaned)) return cleaned;
+              return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+            };
+            const pickCategory = (modKey, rawCat) => {
+              const list = CATEGORY_ALLOWLISTS[modKey];
+              const candidate = String(rawCat ?? '').trim();
+              return list.includes(candidate) ? candidate : list[list.length - 1];
+            };
+
+            const sanitizeRecordPayload = (modKey, raw, uidVal) => {
+              if (modKey === 'assets') {
+                return {
+                  ownerId: uidVal,
+                  category: pickCategory('assets', raw.category),
+                  description: clampStr(raw.description, 300, ''),
+                  unit: clampStr(raw.unit, 100, 'Unit'),
+                  value: nonNegNum(raw.value),
+                  location: clampStr(raw.location, 200, 'Unspecified'),
+                  purchaseDate: normalizeYMD(raw.purchaseDate)
+                };
+              }
+              if (modKey === 'bank') {
+                return {
+                  ownerId: uidVal,
+                  category: pickCategory('bank', raw.category),
+                  bankName: clampStr(raw.bankName, 150, 'Bank'),
+                  accountNumber: clampStr(raw.accountNumber, 100, 'N/A'),
+                  issueDate: normalizeYMD(raw.issueDate),
+                  amount: nonNegNum(raw.amount),
+                  notes: clampStr(raw.notes, 500, '')
+                };
+              }
+              if (modKey === 'liabilities') {
+                return {
+                  ownerId: uidVal,
+                  category: pickCategory('liabilities', raw.category),
+                  counterparty: clampStr(raw.counterparty, 150, 'Counterparty'),
+                  description: clampStr(raw.description, 300, ''),
+                  amount: nonNegNum(raw.amount),
+                  date: normalizeYMD(raw.date)
+                };
+              }
+              return {
+                ownerId: uidVal,
+                category: pickCategory(modKey, raw.category),
+                date: normalizeYMD(raw.date),
+                amount: nonNegNum(raw.amount),
+                description: clampStr(raw.description, 300, '')
+              };
+            };
+
+            const sanitizeUiSettings = (raw, user) => {
+              const now = new Date();
+              const fallbackYear = String(now.getFullYear());
+              const fallbackMonth = String(now.getMonth() + 1).padStart(2, '0');
+              const selectedMonth = /^(0[1-9]|1[0-2])$/.test(String(raw.selectedMonth || '')) ? String(raw.selectedMonth) : fallbackMonth;
+              const selectedYear = /^[0-9]{4}$/.test(String(raw.selectedYear || '')) ? String(raw.selectedYear) : fallbackYear;
+              return {
+                ownerId: user.uid,
+                displayName: clampStr(raw.displayName || user.displayName || (user.email ? user.email.split('@')[0] : '') || 'WealthLedger User', 80, 'WealthLedger User'),
+                currency: ALLOWED_CURRENCIES.includes(String(raw.currency || '')) ? String(raw.currency) : '$',
+                selectedMonth,
+                selectedYear,
+                reportStartDate: normalizeYMD(raw.reportStartDate || `${selectedYear}-01-01`),
+                reportEndDate: normalizeYMD(raw.reportEndDate || `${selectedYear}-12-31`),
+                reportPreset: ALLOWED_REPORT_PRESETS.includes(String(raw.reportPreset || '')) ? String(raw.reportPreset) : 'year',
+                netWorthRange: ALLOWED_NET_WORTH_RANGES.includes(String(raw.netWorthRange || '')) ? String(raw.netWorthRange) : 'All'
+              };
+            };
+
+            let activeUnsubs = [];
+            const existingDocIds = { assets: new Set(), bank: new Set(), liabilities: new Set(), income: new Set(), expenditure: new Set() };
+            const clearSubscriptions = () => {
+              activeUnsubs.forEach((u) => { try { u(); } catch {} });
+              activeUnsubs = [];
+              MODULE_KEYS.forEach((k) => existingDocIds[k].clear());
+            };
+
+            async function ensureUserProfile(user, fallbackUi) {
+              const path = `users/${user.uid}`;
+              const ref = fsMod.doc(db, 'users', user.uid);
+              let snap;
+              try {
+                snap = await fsMod.getDoc(ref);
+              } catch (err) {
+                handleFirestoreError(err, OperationType.GET, path);
+              }
+              if (!snap.exists()) {
+                const sanitized = sanitizeUiSettings(fallbackUi, user);
+                try {
+                  await fsMod.setDoc(ref, {
+                    ...sanitized,
+                    createdAt: fsMod.serverTimestamp(),
+                    updatedAt: fsMod.serverTimestamp()
+                  });
+                } catch (err) {
+                  handleFirestoreError(err, OperationType.CREATE, path);
+                }
+              }
+            }
+
+            const isPasswordProviderUser = (user) => user.providerData.some((p) => p.providerId === 'password');
+
+            async function subscribeWorkspace(user, callbacks, defaultUi) {
+              clearSubscriptions();
+              await ensureUserProfile(user, defaultUi);
+              const profilePath = `users/${user.uid}`;
+              activeUnsubs.push(
+                fsMod.onSnapshot(
+                  fsMod.doc(db, 'users', user.uid),
+                  (snap) => { if (snap.exists()) callbacks.onProfileUpdate(snap.data()); },
+                  (error) => {
+                    try { handleFirestoreError(error, OperationType.GET, profilePath); }
+                    catch (w) { callbacks.onSyncError(w instanceof Error ? w.message : String(w)); }
+                  }
+                )
+              );
+              MODULE_KEYS.forEach((modKey) => {
+                const colPath = `users/${user.uid}/${modKey}`;
+                const q = fsMod.query(fsMod.collection(db, 'users', user.uid, modKey), fsMod.where('ownerId', '==', user.uid));
+                activeUnsubs.push(
+                  fsMod.onSnapshot(
+                    q,
+                    (snapshot) => {
+                      const items = [];
+                      const idSet = new Set();
+                      snapshot.forEach((docSnap) => {
+                        idSet.add(docSnap.id);
+                        items.push({ ...docSnap.data(), id: docSnap.id });
+                      });
+                      existingDocIds[modKey] = idSet;
+                      items.sort((a, b) => String(b.date || b.purchaseDate || b.issueDate || '').localeCompare(String(a.date || a.purchaseDate || a.issueDate || '')));
+                      callbacks.onModuleSnapshot(modKey, items);
+                    },
+                    (error) => {
+                      try { handleFirestoreError(error, OperationType.LIST, colPath); }
+                      catch (w) { callbacks.onSyncError(w instanceof Error ? w.message : String(w)); }
+                    }
+                  )
+                );
+              });
+            }
+
+            function mapFirebaseAuthError(err) {
+              const code = err && err.code ? err.code : '';
+              switch (code) {
+                case 'auth/operation-not-allowed':
+                  return 'Email & Password login is not enabled in Firebase Console yet. Enable "Email/Password" under Firebase Authentication → Sign-in method, OR click "Continue with Google" below right now.';
+                case 'auth/email-already-in-use':
+                  return 'This email is already registered. Please switch to Sign In or use Forgot Password.';
+                case 'auth/invalid-email':
+                  return 'Please enter a valid email address.';
+                case 'auth/weak-password':
+                  return 'Password must be at least 6 characters long.';
+                case 'auth/user-not-found':
+                case 'auth/wrong-password':
+                case 'auth/invalid-credential':
+                  return 'Incorrect Email or Password. Please try again or use Forgot Password.';
+                case 'auth/too-many-requests':
+                  return 'Too many attempts. Please wait a few minutes and try again.';
+                case 'auth/popup-closed-by-user':
+                  return 'Google Sign-In popup was closed before finishing.';
+                case 'auth/popup-blocked':
+                  return 'Popup was blocked by your browser. Please allow popups for this site or use Email & Password.';
+                case 'auth/unauthorized-domain':
+                  return `This domain (${window.location.hostname}) is not in Firebase Authorized Domains yet. Add it under Firebase Console → Authentication → Settings → Authorized domains, OR sign in with Email & Password below.`;
+                case 'auth/requires-recent-login':
+                  return 'For security, please log off and sign in again before changing your password.';
+                default:
+                  return err instanceof Error ? err.message : 'Authentication error occurred.';
+              }
+            }
+
+            function scanLocalBackups() {
+              const combined = { assets: [], bank: [], liabilities: [], income: [], expenditure: [] };
+              let foundUi = {};
+              const seenIds = new Set();
+              try {
+                for (let i = 0; i < localStorage.length; i++) {
+                  const key = localStorage.key(i);
+                  if (!key) continue;
+                  if (key === 'wealthledger_v2_data' || key.startsWith('wealthledger_v2_data_')) {
+                    const raw = localStorage.getItem(key);
+                    if (!raw) continue;
+                    const parsed = JSON.parse(raw);
+                    const dataset = parsed && parsed.data && typeof parsed.data === 'object' ? parsed.data : parsed;
+                    if (parsed && parsed.ui && typeof parsed.ui === 'object') foundUi = { ...foundUi, ...parsed.ui };
+                    MODULE_KEYS.forEach((modKey) => {
+                      const arr = dataset && dataset[modKey];
+                      if (Array.isArray(arr)) {
+                        arr.forEach((item) => {
+                          if (item && typeof item === 'object') {
+                            const sid = sanitizeId(item.id, modKey.slice(0, 3));
+                            const uk = `${modKey}:${sid}`;
+                            if (!seenIds.has(uk)) {
+                              seenIds.add(uk);
+                              combined[modKey].push({ ...item, id: sid });
+                            }
+                          }
+                        });
+                      }
+                    });
+                  }
+                }
+              } catch {}
+              const totalRecords = MODULE_KEYS.reduce((s, k) => s + combined[k].length, 0);
+              return { totalRecords, data: combined, ui: foundUi };
+            }
+
+            function clearLocalBackupKeys() {
+              try {
+                const del = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                  const k = localStorage.key(i);
+                  if (k && (k === 'wealthledger_v2_data' || k.startsWith('wealthledger_v2_data_'))) del.push(k);
+                }
+                del.forEach((k) => localStorage.removeItem(k));
+              } catch {}
+            }
+
+            async function commitOpsInChunks(ops) {
+              for (let i = 0; i < ops.length; i += 400) {
+                const batch = fsMod.writeBatch(db);
+                ops.slice(i, i + 400).forEach((apply) => apply(batch));
+                await batch.commit();
+              }
+            }
+
+            let bootCallbacks = null;
+            let bootDefaultUi = {};
+
+            window.WealthLedgerCloud = {
+              init(callbacks, defaultUi) {
+                bootCallbacks = callbacks;
+                bootDefaultUi = defaultUi;
+                authMod.onAuthStateChanged(auth, async (user) => {
+                  if (!user) {
+                    clearSubscriptions();
+                    callbacks.onAuthSignedOut();
+                    return;
+                  }
+                  if (!user.emailVerified) {
+                    clearSubscriptions();
+                    callbacks.onAuthNeedsVerification({
+                      uid: user.uid,
+                      email: user.email || '',
+                      displayName: user.displayName || (user.email ? user.email.split('@')[0] : '') || 'User'
+                    });
+                    return;
+                  }
+                  const tokenResult = await user.getIdTokenResult();
+                  if (!tokenResult.claims.email_verified) await user.getIdToken(true);
+                  callbacks.onAuthReady({
+                    uid: user.uid,
+                    email: user.email || '',
+                    displayName: user.displayName || (user.email ? user.email.split('@')[0] : '') || 'User',
+                    isPasswordUser: isPasswordProviderUser(user)
+                  });
+                  try {
+                    await subscribeWorkspace(user, callbacks, defaultUi);
+                  } catch (err) {
+                    callbacks.onSyncError(err instanceof Error ? err.message : String(err));
+                  }
+                });
+              },
+              async signInWithGoogle() {
+                try { await authMod.signInWithPopup(auth, googleProvider); return { ok: true }; }
+                catch (err) { return { ok: false, error: mapFirebaseAuthError(err) }; }
+              },
+              async signInWithEmail(email, password) {
+                try { await authMod.signInWithEmailAndPassword(auth, email.trim(), password); return { ok: true }; }
+                catch (err) { return { ok: false, error: mapFirebaseAuthError(err) }; }
+              },
+              async registerWithEmail(displayName, email, password) {
+                try {
+                  const cred = await authMod.createUserWithEmailAndPassword(auth, email.trim(), password);
+                  const cleanName = clampStr(displayName, 80, email.split('@')[0] || 'User');
+                  await authMod.updateProfile(cred.user, { displayName: cleanName });
+                  await authMod.sendEmailVerification(cred.user);
+                  return { ok: true, emailVerified: cred.user.emailVerified };
+                } catch (err) {
+                  return { ok: false, error: mapFirebaseAuthError(err) };
+                }
+              },
+              async resendVerificationEmail() {
+                if (!auth.currentUser) return { ok: false, error: 'No signed-in user found.' };
+                try { await authMod.sendEmailVerification(auth.currentUser); return { ok: true }; }
+                catch (err) { return { ok: false, error: mapFirebaseAuthError(err) }; }
+              },
+              async checkVerificationAndEnter() {
+                if (!auth.currentUser) return { ok: false, error: 'Please sign in first.' };
+                try {
+                  await auth.currentUser.reload();
+                  const user = auth.currentUser;
+                  if (user.emailVerified && bootCallbacks) {
+                    await user.getIdToken(true);
+                    bootCallbacks.onAuthReady({
+                      uid: user.uid,
+                      email: user.email || '',
+                      displayName: user.displayName || (user.email ? user.email.split('@')[0] : '') || 'User',
+                      isPasswordUser: isPasswordProviderUser(user)
+                    });
+                    await subscribeWorkspace(user, bootCallbacks, bootDefaultUi);
+                    return { ok: true, verified: true };
+                  }
+                  return { ok: false, verified: false, error: 'Email is not verified yet. Please click the verification link sent to your inbox (check Spam too) and try again.' };
+                } catch (err) {
+                  return { ok: false, verified: false, error: mapFirebaseAuthError(err) };
+                }
+              },
+              async sendPasswordReset(email) {
+                try { await authMod.sendPasswordResetEmail(auth, email.trim()); return { ok: true }; }
+                catch (err) { return { ok: false, error: mapFirebaseAuthError(err) }; }
+              },
+              async changePassword(currentPwd, newPwd) {
+                const user = auth.currentUser;
+                if (!user || !user.email) return { ok: false, error: 'No password-based user is signed in.' };
+                try {
+                  const cred = authMod.EmailAuthProvider.credential(user.email, currentPwd);
+                  await authMod.reauthenticateWithCredential(user, cred);
+                  await authMod.updatePassword(user, newPwd);
+                  return { ok: true };
+                } catch (err) {
+                  return { ok: false, error: mapFirebaseAuthError(err) };
+                }
+              },
+              async signOutCloud() {
+                clearSubscriptions();
+                await authMod.signOut(auth);
+              },
+              async saveProfileSettings(uiState) {
+                const user = auth.currentUser;
+                if (!user || !user.emailVerified) return;
+                const path = `users/${user.uid}`;
+                const ref = fsMod.doc(db, 'users', user.uid);
+                const sanitized = sanitizeUiSettings(uiState, user);
+                try {
+                  const snap = await fsMod.getDoc(ref);
+                  if (snap.exists()) {
+                    const { ownerId: _ignored, ...mutableFields } = sanitized;
+                    await fsMod.updateDoc(ref, { ...mutableFields, updatedAt: fsMod.serverTimestamp() });
+                  } else {
+                    await fsMod.setDoc(ref, { ...sanitized, createdAt: fsMod.serverTimestamp(), updatedAt: fsMod.serverTimestamp() });
+                  }
+                } catch (err) {
+                  handleFirestoreError(err, OperationType.UPDATE, path);
+                }
+              },
+              async upsertRecord(modKey, rawRecord, isEdit) {
+                const user = auth.currentUser;
+                if (!user || !user.emailVerified) throw new Error('Authenticated verified session required.');
+                await ensureUserProfile(user, bootDefaultUi);
+                const recordId = sanitizeId(rawRecord.id, modKey.slice(0, 3));
+                const docPath = `users/${user.uid}/${modKey}/${recordId}`;
+                const docRef = fsMod.doc(db, 'users', user.uid, modKey, recordId);
+                const payload = sanitizeRecordPayload(modKey, rawRecord, user.uid);
+                try {
+                  if (isEdit && existingDocIds[modKey].has(recordId)) {
+                    const { ownerId: _ignored, ...mutableFields } = payload;
+                    await fsMod.updateDoc(docRef, { ...mutableFields, updatedAt: fsMod.serverTimestamp() });
+                  } else {
+                    await fsMod.setDoc(docRef, { ...payload, createdAt: fsMod.serverTimestamp(), updatedAt: fsMod.serverTimestamp() });
+                  }
+                  return recordId;
+                } catch (err) {
+                  handleFirestoreError(err, isEdit ? OperationType.UPDATE : OperationType.CREATE, docPath);
+                }
+              },
+              async deleteRecord(modKey, rawId) {
+                const user = auth.currentUser;
+                if (!user || !user.emailVerified) throw new Error('Authenticated verified session required.');
+                const recordId = sanitizeId(rawId, modKey.slice(0, 3));
+                try { await fsMod.deleteDoc(fsMod.doc(db, 'users', user.uid, modKey, recordId)); }
+                catch (err) { handleFirestoreError(err, OperationType.DELETE, `users/${user.uid}/${modKey}/${recordId}`); }
+              },
+              async clearAllRecords() {
+                const user = auth.currentUser;
+                if (!user || !user.emailVerified) throw new Error('Authenticated verified session required.');
+                await ensureUserProfile(user, bootDefaultUi);
+                const ops = [];
+                for (const modKey of MODULE_KEYS) {
+                  try {
+                    const q = fsMod.query(fsMod.collection(db, 'users', user.uid, modKey), fsMod.where('ownerId', '==', user.uid));
+                    const snap = await fsMod.getDocs(q);
+                    snap.forEach((docSnap) => ops.push((batch) => batch.delete(docSnap.ref)));
+                  } catch (err) {
+                    handleFirestoreError(err, OperationType.LIST, `users/${user.uid}/${modKey}`);
+                  }
+                }
+                try { await commitOpsInChunks(ops); }
+                catch (err) { handleFirestoreError(err, OperationType.DELETE, `users/${user.uid}`); }
+              },
+              async replaceAllRecords(importedData, importedUi) {
+                const user = auth.currentUser;
+                if (!user || !user.emailVerified) throw new Error('Authenticated verified session required.');
+                await ensureUserProfile(user, importedUi || bootDefaultUi);
+                await this.clearAllRecords();
+                const ops = [];
+                for (const modKey of MODULE_KEYS) {
+                  const list = Array.isArray(importedData[modKey]) ? importedData[modKey] : [];
+                  list.forEach((raw) => {
+                    if (!raw || typeof raw !== 'object') return;
+                    const recordId = sanitizeId(raw.id, modKey.slice(0, 3));
+                    const docRef = fsMod.doc(db, 'users', user.uid, modKey, recordId);
+                    const payload = sanitizeRecordPayload(modKey, raw, user.uid);
+                    ops.push((batch) => batch.set(docRef, { ...payload, createdAt: fsMod.serverTimestamp(), updatedAt: fsMod.serverTimestamp() }));
+                  });
+                }
+                try {
+                  await commitOpsInChunks(ops);
+                  if (importedUi && Object.keys(importedUi).length > 0) await this.saveProfileSettings(importedUi);
+                } catch (err) {
+                  handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`);
+                }
+              },
+              getLocalBackupSummary() {
+                return scanLocalBackups();
+              },
+              async migrateLocalBackupsToCloud(clearAfter = true) {
+                const user = auth.currentUser;
+                if (!user || !user.emailVerified) throw new Error('Authenticated verified session required.');
+                const backup = scanLocalBackups();
+                if (backup.totalRecords === 0) return 0;
+                await ensureUserProfile(user, backup.ui);
+                const ops = [];
+                for (const modKey of MODULE_KEYS) {
+                  backup.data[modKey].forEach((raw) => {
+                    const recordId = sanitizeId(raw.id, modKey.slice(0, 3));
+                    const docRef = fsMod.doc(db, 'users', user.uid, modKey, recordId);
+                    const payload = sanitizeRecordPayload(modKey, raw, user.uid);
+                    ops.push((batch) => batch.set(docRef, { ...payload, createdAt: fsMod.serverTimestamp(), updatedAt: fsMod.serverTimestamp() }));
+                  });
+                }
+                try {
+                  await commitOpsInChunks(ops);
+                  if (clearAfter) clearLocalBackupKeys();
+                  return backup.totalRecords;
+                } catch (err) {
+                  handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`);
+                }
+              }
+            };
+
+            bootCloudBridge();
+            return true;
+          } catch (err) {
+            console.error('Standalone Firebase fallback failed:', err);
+            cloudFallbackPromise = null;
+            return false;
+          }
+        })();
+      }
+      return await cloudFallbackPromise;
+    }
+
     window.onWealthLedgerCloudLoaded = bootCloudBridge;
-    document.addEventListener('DOMContentLoaded', bootCloudBridge);
+    document.addEventListener('DOMContentLoaded', () => {
+      if (window.WealthLedgerCloud) {
+        bootCloudBridge();
+      } else if (window.__wlCloudScriptFailed) {
+        void ensureCloudReady();
+      } else {
+        setTimeout(() => {
+          if (!window.WealthLedgerCloud) {
+            void ensureCloudReady();
+          } else {
+            bootCloudBridge();
+          }
+        }, 150);
+      }
+    });
   </script>
 </body>
 </html>
