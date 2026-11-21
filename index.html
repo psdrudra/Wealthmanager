@@ -246,8 +246,11 @@
 
       <!-- Auth Card -->
       <div class="fintech-card p-6 sm:p-7 space-y-5">
-        <!-- Quick Google Sign-In (Works instantly across every device & browser) -->
+        <!-- Quick Google Sign-In (Works across desktop & mobile browsers; blocked inside Android WebView) -->
         <div id="auth-google-wrap" class="space-y-3">
+          <div id="auth-webview-notice" class="hidden px-3.5 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 leading-relaxed">
+            <strong>Android App (WebView) Notice:</strong> Google blocks &ldquo;Continue with Google&rdquo; inside embedded Android WebViews. Please sign in with <strong>Email &amp; Password</strong> below &mdash; it connects to the exact same cloud account &amp; data.
+          </div>
           <button type="button" id="google-signin-btn" onclick="handleGoogleSignIn()" class="w-full min-h-[46px] px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 rounded-xl flex items-center justify-center gap-3 text-sm font-bold text-slate-800 shadow-2xs transition-all">
             <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
@@ -680,11 +683,23 @@
       </div>
       <div id="account-google-note" class="hidden p-5 sm:p-6 space-y-4">
         <div class="p-4 rounded-2xl bg-sky-50 border border-sky-200 text-xs text-sky-900 leading-relaxed">
-          You are signed in with your <strong>Google Account</strong>. Your password and security are managed directly by Google and work across all your devices automatically.
+          You are signed in with your <strong>Google Account</strong>. Want to also sign in with <strong>Email &amp; Password</strong> inside an Android APK / WebView? Set an optional app password below (keeps all your data intact):
         </div>
-        <div class="flex justify-end">
-          <button type="button" onclick="closeAccountModal()" class="min-h-[42px] px-5 py-2 text-sm font-semibold text-white nav-active-gradient rounded-xl">Close</button>
-        </div>
+        <form id="account-link-password-form" onsubmit="handleLinkPasswordSubmit(event)" class="space-y-3">
+          <div id="account-link-error" class="hidden px-3.5 py-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700"></div>
+          <div>
+            <label for="acc-link-new-password" class="block text-xs font-semibold text-slate-600 mb-1.5">Set App Password *</label>
+            <input id="acc-link-new-password" type="password" required minlength="6" autocomplete="new-password" placeholder="Minimum 6 characters" class="w-full px-3.5 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[42px]" />
+          </div>
+          <div>
+            <label for="acc-link-confirm-password" class="block text-xs font-semibold text-slate-600 mb-1.5">Confirm App Password *</label>
+            <input id="acc-link-confirm-password" type="password" required minlength="6" autocomplete="new-password" placeholder="Re-enter password" class="w-full px-3.5 py-2.5 text-base md:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400 min-h-[42px]" />
+          </div>
+          <div class="pt-2 flex items-center justify-end gap-3">
+            <button type="button" onclick="closeAccountModal()" class="min-h-[42px] px-4 py-2 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl">Close</button>
+            <button type="submit" class="min-h-[42px] px-5 py-2 text-sm font-semibold text-white nav-active-gradient rounded-xl hover:opacity-95">Save App Password</button>
+          </div>
+        </form>
       </div>
       <form id="account-password-form" onsubmit="handleChangePasswordSubmit(event)" class="p-5 sm:p-6 space-y-4">
         <div id="account-error" class="hidden px-3.5 py-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700"></div>
@@ -3799,7 +3814,9 @@
     function openAccountModal() {
       if (!currentUser) return;
       const errEl = document.getElementById('account-error');
+      const linkErrEl = document.getElementById('account-link-error');
       if (errEl) { errEl.textContent = ''; errEl.classList.add('hidden'); }
+      if (linkErrEl) { linkErrEl.textContent = ''; linkErrEl.classList.add('hidden'); }
       document.getElementById('account-modal-userid').textContent = `${currentUser.displayName} (${currentUser.email})`;
 
       const googleNote = document.getElementById('account-google-note');
@@ -3813,6 +3830,10 @@
       } else {
         if (googleNote) googleNote.classList.remove('hidden');
         if (pwdForm) pwdForm.classList.add('hidden');
+        const linkPwd = document.getElementById('acc-link-new-password');
+        const linkConf = document.getElementById('acc-link-confirm-password');
+        if (linkPwd) linkPwd.value = '';
+        if (linkConf) linkConf.value = '';
       }
 
       const modal = document.getElementById('account-modal');
@@ -3825,6 +3846,39 @@
       if (!modal) return;
       modal.classList.add('hidden');
       modal.classList.remove('flex');
+    }
+
+    async function handleLinkPasswordSubmit(event) {
+      event.preventDefault();
+      if (!currentUser || !window.WealthLedgerCloud) return;
+      const errEl = document.getElementById('account-link-error');
+      const setErr = (msg) => {
+        if (!errEl) return;
+        if (!msg) { errEl.textContent = ''; errEl.classList.add('hidden'); }
+        else { errEl.textContent = msg; errEl.classList.remove('hidden'); }
+      };
+      setErr('');
+
+      const newPwd = String(document.getElementById('acc-link-new-password').value || '');
+      const confPwd = String(document.getElementById('acc-link-confirm-password').value || '');
+
+      if (newPwd.length < 6) {
+        setErr('Password must be at least 6 characters long.');
+        return;
+      }
+      if (newPwd !== confPwd) {
+        setErr('Password and confirmation do not match.');
+        return;
+      }
+
+      const res = await window.WealthLedgerCloud.linkPasswordToGoogleAccount(newPwd);
+      if (!res.ok) {
+        setErr(res.error || 'Could not link password to Google account.');
+        return;
+      }
+      currentUser.isPasswordUser = true;
+      closeAccountModal();
+      showToast('App password linked! You can now also sign in with Email & Password in Android apps.', 'success');
     }
 
     async function handleChangePasswordSubmit(event) {
@@ -3859,8 +3913,22 @@
       showToast('Cloud password updated successfully.', 'success');
     }
 
+    function updateWebViewAuthBanner() {
+      const notice = document.getElementById('auth-webview-notice');
+      if (!notice) return;
+      const ua = navigator.userAgent || '';
+      const isAndroidLocalhost = /Android/i.test(ua) && window.location.hostname === 'localhost';
+      const isWv = (window.WealthLedgerCloud && typeof window.WealthLedgerCloud.isEmbeddedWebView === 'function' && window.WealthLedgerCloud.isEmbeddedWebView())
+        || /; wv\)/i.test(ua)
+        || (/Android/i.test(ua) && /Version\/[0-9.]+/i.test(ua) && !/Chrome\/[0-9.]+ Mobile/i.test(ua))
+        || isAndroidLocalhost;
+      if (isWv) notice.classList.remove('hidden');
+      else notice.classList.add('hidden');
+    }
+
     let cloudInitialized = false;
     function bootCloudBridge() {
+      updateWebViewAuthBanner();
       if (cloudInitialized || !window.WealthLedgerCloud) return;
       cloudInitialized = true;
 
@@ -3934,6 +4002,9 @@
             } else {
               showToast('Cloud sync error. Check network or permissions.', 'error');
             }
+          },
+          onAuthRedirectError: (msg) => {
+            if (msg) showAuthError(msg);
           }
         },
         state.ui
@@ -4189,8 +4260,25 @@
               });
             }
 
+            function isEmbeddedWebView() {
+              const ua = navigator.userAgent || '';
+              const isAndroidLocalhost = /Android/i.test(ua) && window.location.hostname === 'localhost';
+              return /; wv\)/i.test(ua)
+                || (/Android/i.test(ua) && /Version\/[0-9.]+/i.test(ua) && !/Chrome\/[0-9.]+ Mobile/i.test(ua))
+                || isAndroidLocalhost
+                || window.location.protocol === 'file:';
+            }
+
+            function shouldUseRedirectAuth() {
+              if (window.self !== window.top) return false;
+              return isEmbeddedWebView();
+            }
+
             function mapFirebaseAuthError(err) {
               const code = err && err.code ? err.code : '';
+              if (isEmbeddedWebView() && (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request' || code === 'auth/operation-not-supported-in-this-environment' || code === 'auth/internal-error')) {
+                return 'Google blocks "Continue with Google" inside embedded Android WebView apps (disallowed_useragent). Please sign in with Email & Password below (it syncs the exact same cloud data), or open the app via Chrome / TWA (Trusted Web Activity).';
+              }
               switch (code) {
                 case 'auth/operation-not-allowed':
                   return 'Email & Password login is not enabled in Firebase Console yet. Enable "Email/Password" under Firebase Authentication → Sign-in method, OR click "Continue with Google" below right now.';
@@ -4208,12 +4296,16 @@
                   return 'Too many attempts. Please wait a few minutes and try again.';
                 case 'auth/popup-closed-by-user':
                   return 'Google Sign-In popup was closed before finishing.';
+                case 'auth/cancelled-popup-request':
+                  return 'Google Sign-In request was interrupted. Please try again or use Email & Password.';
                 case 'auth/popup-blocked':
-                  return 'Popup was blocked by your browser. Please allow popups for this site or use Email & Password.';
+                  return 'Popup was blocked by your browser/WebView. Please allow popups or sign in with Email & Password below.';
+                case 'auth/operation-not-supported-in-this-environment':
+                  return 'Google popup login is not supported in this app environment. Please use Email & Password below.';
                 case 'auth/unauthorized-domain':
                   return `This domain (${window.location.hostname}) is not in Firebase Authorized Domains yet. Add it under Firebase Console → Authentication → Settings → Authorized domains, OR sign in with Email & Password below.`;
                 case 'auth/requires-recent-login':
-                  return 'For security, please log off and sign in again before changing your password.';
+                  return 'For security, please log off and sign in again before updating your password.';
                 default:
                   return err instanceof Error ? err.message : 'Authentication error occurred.';
               }
@@ -4281,6 +4373,30 @@
               init(callbacks, defaultUi) {
                 bootCallbacks = callbacks;
                 bootDefaultUi = defaultUi;
+
+                (async () => {
+                  try {
+                    const result = await authMod.getRedirectResult(auth);
+                    if (result && result.user) {
+                      try { sessionStorage.removeItem('wl_google_redirect_pending'); } catch {}
+                    } else {
+                      let pending = false;
+                      try { pending = sessionStorage.getItem('wl_google_redirect_pending') === '1'; } catch {}
+                      if (pending && !auth.currentUser) {
+                        try { sessionStorage.removeItem('wl_google_redirect_pending'); } catch {}
+                        if (typeof callbacks.onAuthRedirectError === 'function') {
+                          callbacks.onAuthRedirectError('Google Sign-In could not complete inside this Android WebView (third-party cookies/popup restricted). Please sign in using Email & Password below, or open the web app in Chrome.');
+                        }
+                      }
+                    }
+                  } catch (err) {
+                    try { sessionStorage.removeItem('wl_google_redirect_pending'); } catch {}
+                    if (typeof callbacks.onAuthRedirectError === 'function') {
+                      callbacks.onAuthRedirectError(mapFirebaseAuthError(err));
+                    }
+                  }
+                })();
+
                 authMod.onAuthStateChanged(auth, async (user) => {
                   if (!user) {
                     clearSubscriptions();
@@ -4312,8 +4428,18 @@
                 });
               },
               async signInWithGoogle() {
-                try { await authMod.signInWithPopup(auth, googleProvider); return { ok: true }; }
-                catch (err) { return { ok: false, error: mapFirebaseAuthError(err) }; }
+                try {
+                  if (shouldUseRedirectAuth()) {
+                    try { sessionStorage.setItem('wl_google_redirect_pending', '1'); } catch {}
+                    await authMod.signInWithRedirect(auth, googleProvider);
+                    return { ok: true };
+                  }
+                  await authMod.signInWithPopup(auth, googleProvider);
+                  return { ok: true };
+                } catch (err) {
+                  try { sessionStorage.removeItem('wl_google_redirect_pending'); } catch {}
+                  return { ok: false, error: mapFirebaseAuthError(err) };
+                }
               },
               async signInWithEmail(email, password) {
                 try { await authMod.signInWithEmailAndPassword(auth, email.trim(), password); return { ok: true }; }
@@ -4371,6 +4497,20 @@
                 } catch (err) {
                   return { ok: false, error: mapFirebaseAuthError(err) };
                 }
+              },
+              async linkPasswordToGoogleAccount(newPwd) {
+                const user = auth.currentUser;
+                if (!user || !user.email) return { ok: false, error: 'No signed-in Google user found.' };
+                try {
+                  const cred = authMod.EmailAuthProvider.credential(user.email, newPwd);
+                  await authMod.linkWithCredential(user, cred);
+                  return { ok: true };
+                } catch (err) {
+                  return { ok: false, error: mapFirebaseAuthError(err) };
+                }
+              },
+              isEmbeddedWebView() {
+                return isEmbeddedWebView();
               },
               async signOutCloud() {
                 clearSubscriptions();
